@@ -1,10 +1,12 @@
 using AcmsDashboard.Api.Data;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;   
 
 namespace AcmsDashboard.Api.Controllers;
 
 [ApiController]
+[Authorize] 
 [Route("v1/employees")]
 public class EmployeesController : ControllerBase
 {
