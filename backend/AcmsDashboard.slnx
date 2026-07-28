@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="AcmsDashboard.Api/AcmsDashboard.Api.csproj" />
+  <Project Path="AcmsDashboard.Tests/AcmsDashboard.Tests.csproj" />
+</Solution>
