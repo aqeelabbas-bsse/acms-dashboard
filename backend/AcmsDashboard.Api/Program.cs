@@ -3,10 +3,12 @@ using AcmsDashboard.Api.Data;
 using AcmsDashboard.Api.Identity;
 using AcmsDashboard.Api.Middleware;
 using AcmsDashboard.Api.Services;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -75,9 +77,41 @@ builder.Services.AddAuthentication(options =>
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<TokenService>();
 
+// ---- Validation (Phase 4) ----
+// Scans this assembly and registers every AbstractValidator<T> automatically,
+// so controllers can inject IValidator<CreateEmployeeRequest> etc.
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
+
+// ---- MVC / Swagger ----
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(opt =>
+{
+    opt.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "ACMS Dashboard API",
+        Version = "v1",
+        Description = "Access Control Management System — NASTP"
+    });
+
+    opt.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Paste your JWT here — do NOT include the word 'Bearer'."
+    });
+
+opt.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecuritySchemeReference("Bearer", null),
+            new List<string>()
+        }
+    });
+});
 
 builder.Services.AddCors(opt => opt.AddPolicy("AngularDev", p => p
     .WithOrigins("http://localhost:4200")
