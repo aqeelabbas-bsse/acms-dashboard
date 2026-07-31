@@ -1,4 +1,5 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using AcmsDashboard.Api.Analytics;
 using AcmsDashboard.Api.Data;
 using AcmsDashboard.Api.Identity;
@@ -8,6 +9,7 @@ using AcmsDashboard.Api.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -117,13 +119,58 @@ builder.Services.AddQuartz(q =>
     q.AddTrigger(opt => opt
         .ForJob(jobKey)
         .WithIdentity($"{nameof(DailyStatsJob)}-trigger")
-        // First run 15s after startup so summary tables populate immediately;
-        // then hourly, per the Detailed Implementation Plan.
         .StartAt(DateBuilder.FutureDate(15, IntervalUnit.Second))
         .WithSimpleSchedule(s => s.WithIntervalInHours(1).RepeatForever()));
 });
 
 builder.Services.AddQuartzHostedService(opt => opt.WaitForJobsToComplete = true);
+
+// ---- NL Query Agent (Phase 7) ----
+builder.Services.AddSingleton<SqlSafetyValidator>();
+builder.Services.AddScoped<AgentService>();
+
+builder.Services.AddHttpClient<GeminiClient>(client =>
+{
+    client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+// ---- Rate limiting (Phase 7) ----
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    // 20/min per user on the agent - keeps us inside the Gemini free tier.
+    options.AddPolicy("agent", context => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anon",
+        factory: _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        }));
+
+    // 120/min everywhere else, per the API Specification.
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anon",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 120,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            }));
+
+    options.OnRejected = async (context, ct) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            success = false,
+            error = new { code = "RATE_LIMITED", message = "Too many requests. Please wait a moment." }
+        }, ct);
+    };
+});
 
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
@@ -181,10 +228,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseStaticFiles();
 app.UseCors("AngularDev");
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();   // AFTER auth - the limiter partitions by username
 
 app.MapControllers();
 app.MapHub<AuditHub>("/hubs/audit");
