@@ -1,6 +1,7 @@
 using AcmsDashboard.Api.Data;
 using AcmsDashboard.Api.Dtos;
 using AcmsDashboard.Api.Models;
+using AcmsDashboard.Api.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,11 +16,16 @@ public class VisitorsController : ControllerBase
 {
     private readonly AcmsDbContext _db;
     private readonly IValidator<RegisterVisitorRequest> _registerValidator;
+    private readonly IAuditBroadcaster _audit;
 
-    public VisitorsController(AcmsDbContext db, IValidator<RegisterVisitorRequest> registerValidator)
+    public VisitorsController(
+        AcmsDbContext db,
+        IValidator<RegisterVisitorRequest> registerValidator,
+        IAuditBroadcaster audit)
     {
         _db = db;
         _registerValidator = registerValidator;
+        _audit = audit;
     }
 
     /// <summary>GET /v1/visitors?onSite=true</summary>
@@ -137,6 +143,14 @@ public class VisitorsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        await _audit.BroadcastAsync(
+            "VisitorCheckedIn",
+            $"{visitor.Name} ({visitor.CompanyName}) checked in",
+            User.Identity?.Name,
+            new { id = visitor.Id, cnic = visitor.Cnic, card = visitor.CardSerialNumber });
+
+        await _audit.BroadcastOccupancyAsync();   // FR-RT-02: live occupancy counter
+
         return Ok(new
         {
             success = true,
@@ -180,6 +194,14 @@ public class VisitorsController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+
+        await _audit.BroadcastAsync(
+            "VisitorCheckedOut",
+            $"{visitor.Name} checked out",
+            User.Identity?.Name,
+            new { id = visitor.Id, cnic = visitor.Cnic });
+
+        await _audit.BroadcastOccupancyAsync();
 
         return Ok(new { success = true, data = new { id = visitor.Id, exitDate = visitor.ExitDate } });
     }

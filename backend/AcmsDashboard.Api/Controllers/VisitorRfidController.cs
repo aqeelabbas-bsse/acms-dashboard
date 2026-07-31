@@ -1,5 +1,6 @@
 using AcmsDashboard.Api.Data;
 using AcmsDashboard.Api.Dtos;
+using AcmsDashboard.Api.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,11 +15,16 @@ public class VisitorRfidController : ControllerBase
 {
     private readonly AcmsDbContext _db;
     private readonly IValidator<BlockCardRequest> _blockValidator;
+    private readonly IAuditBroadcaster _audit;
 
-    public VisitorRfidController(AcmsDbContext db, IValidator<BlockCardRequest> blockValidator)
+    public VisitorRfidController(
+        AcmsDbContext db,
+        IValidator<BlockCardRequest> blockValidator,
+        IAuditBroadcaster audit)
     {
         _db = db;
         _blockValidator = blockValidator;
+        _audit = audit;
     }
 
     /// <summary>GET /v1/visitor-rfid — card status list.</summary>
@@ -94,6 +100,12 @@ public class VisitorRfidController : ControllerBase
         }
 
         await _db.SaveChangesAsync();
+
+        await _audit.BroadcastAsync(
+            "CardBlocked",
+            $"RFID card {card} blocked — {req.Reason}",
+            User.Identity?.Name,
+            new { smartCardNo = card, reason = req.Reason });
 
         return Ok(new
         {

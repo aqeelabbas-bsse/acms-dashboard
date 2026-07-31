@@ -1,6 +1,7 @@
 using AcmsDashboard.Api.Data;
 using AcmsDashboard.Api.Dtos;
 using AcmsDashboard.Api.Models;
+using AcmsDashboard.Api.Services;
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,11 +16,16 @@ public class CardRequestsController : ControllerBase
 {
     private readonly AcmsDbContext _db;
     private readonly IValidator<CreateCardRequestRequest> _createValidator;
+    private readonly IAuditBroadcaster _audit;
 
-    public CardRequestsController(AcmsDbContext db, IValidator<CreateCardRequestRequest> createValidator)
+    public CardRequestsController(
+        AcmsDbContext db,
+        IValidator<CreateCardRequestRequest> createValidator,
+        IAuditBroadcaster audit)
     {
         _db = db;
         _createValidator = createValidator;
+        _audit = audit;
     }
 
     /// <summary>GET /v1/card-requests?status=submitted|verified|printed</summary>
@@ -115,6 +121,12 @@ public class CardRequestsController : ControllerBase
         _db.CardRequestProcesses.Add(entity);
         await _db.SaveChangesAsync();
 
+        await _audit.BroadcastAsync(
+            "CardRequestSubmitted",
+            $"New card request submitted for CNIC {entity.Cnic}",
+            User.Identity?.Name,
+            new { crid = entity.Crid, cnic = entity.Cnic });
+
         return Ok(new { success = true, data = new { crid = entity.Crid, status = "submitted" } });
     }
 
@@ -136,6 +148,12 @@ public class CardRequestsController : ControllerBase
         request.MarkedOn = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+
+        await _audit.BroadcastAsync(
+            "CardVerified",
+            $"Card request #{request.Crid} verified",
+            User.Identity?.Name,
+            new { crid = request.Crid, cnic = request.Cnic });
 
         return Ok(new { success = true, data = new { crid = request.Crid, status = "verified", verifiedAt = request.MarkedOn } });
     }
@@ -168,6 +186,12 @@ public class CardRequestsController : ControllerBase
         request.PrintBy = User.Identity?.Name;
 
         await _db.SaveChangesAsync();
+
+        await _audit.BroadcastAsync(
+            "CardPrinted",
+            $"Card request #{request.Crid} printed",
+            User.Identity?.Name,
+            new { crid = request.Crid, cnic = request.Cnic });
 
         return Ok(new { success = true, data = new { crid = request.Crid, status = "printed", printedAt = request.PrintingDate } });
     }

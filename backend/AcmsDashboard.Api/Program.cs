@@ -37,52 +37,73 @@ var jwtSecret = builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("Jwt:Secret missing.");
 
 builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(opt =>
+{
+    opt.TokenValidationParameters = new TokenValidationParameters
     {
-        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-        options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
-    })
-    .AddJwtBearer(opt =>
-    {
-        opt.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
-            ClockSkew = TimeSpan.FromMinutes(1)
-        };
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        ClockSkew = TimeSpan.FromMinutes(1)
+    };
 
-        opt.Events = new JwtBearerEvents
+    opt.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
         {
-            OnChallenge = async context =>
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
             {
-                context.HandleResponse();
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(new { success = false, error = new { code = "UNAUTHORIZED", message = "Missing or invalid token" } });
-            },
-            OnForbidden = async context =>
-            {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsJsonAsync(new { success = false, error = new { code = "FORBIDDEN", message = "Your role does not permit this action" } });
+                context.Token = accessToken;
             }
-        };
-    });
+
+            return Task.CompletedTask;
+        },
+
+        OnChallenge = async context =>
+        {
+            context.HandleResponse();
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new
+            {
+                success = false,
+                error = new { code = "UNAUTHORIZED", message = "Missing or invalid token" }
+            });
+        },
+
+        OnForbidden = async context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new
+            {
+                success = false,
+                error = new { code = "FORBIDDEN", message = "Your role does not permit this action" }
+            });
+        }
+    };
+});
 
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<TokenService>();
 
-// ---- Validation (Phase 4) ----
-// Scans this assembly and registers every AbstractValidator<T> automatically,
-// so controllers can inject IValidator<CreateEmployeeRequest> etc.
+builder.Services.AddSignalR();
+builder.Services.AddScoped<IAuditBroadcaster, AuditBroadcaster>();
+
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
-// ---- MVC / Swagger ----
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(opt =>
@@ -91,7 +112,7 @@ builder.Services.AddSwaggerGen(opt =>
     {
         Title = "ACMS Dashboard API",
         Version = "v1",
-        Description = "Access Control Management System — NASTP"
+        Description = "Access Control Management System - NASTP"
     });
 
     opt.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -101,10 +122,10 @@ builder.Services.AddSwaggerGen(opt =>
         Scheme = "bearer",
         BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Paste your JWT here — do NOT include the word 'Bearer'."
+        Description = "Paste your JWT here - do NOT include the word 'Bearer'."
     });
 
-opt.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    opt.AddSecurityRequirement(document => new OpenApiSecurityRequirement
     {
         {
             new OpenApiSecuritySchemeReference("Bearer", null),
@@ -116,7 +137,8 @@ opt.AddSecurityRequirement(document => new OpenApiSecurityRequirement
 builder.Services.AddCors(opt => opt.AddPolicy("AngularDev", p => p
     .WithOrigins("http://localhost:4200")
     .AllowAnyHeader()
-    .AllowAnyMethod()));
+    .AllowAnyMethod()
+    .AllowCredentials()));
 
 var app = builder.Build();
 
@@ -136,10 +158,13 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseStaticFiles();
 app.UseCors("AngularDev");
 app.UseAuthentication();
 app.UseAuthorization();
+
 app.MapControllers();
+app.MapHub<AuditHub>("/hubs/audit");
 
 app.Run();
 
