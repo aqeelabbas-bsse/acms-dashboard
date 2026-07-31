@@ -1,6 +1,8 @@
 using System.Text;
+using AcmsDashboard.Api.Analytics;
 using AcmsDashboard.Api.Data;
 using AcmsDashboard.Api.Identity;
+using AcmsDashboard.Api.Jobs;
 using AcmsDashboard.Api.Middleware;
 using AcmsDashboard.Api.Services;
 using FluentValidation;
@@ -9,6 +11,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using Quartz;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +22,7 @@ var connectionString = builder.Configuration.GetConnectionString("AcmsDb");
 
 builder.Services.AddDbContext<AcmsDbContext>(opt => opt.UseSqlServer(connectionString));
 builder.Services.AddDbContext<AppIdentityDbContext>(opt => opt.UseSqlServer(connectionString));
+builder.Services.AddDbContext<AnalyticsDbContext>(opt => opt.UseSqlServer(connectionString));
 
 builder.Services
     .AddIdentityCore<ApplicationUser>(opt =>
@@ -101,6 +105,25 @@ builder.Services.AddScoped<TokenService>();
 
 builder.Services.AddSignalR();
 builder.Services.AddScoped<IAuditBroadcaster, AuditBroadcaster>();
+
+builder.Services.AddScoped<EtlService>();
+
+builder.Services.AddQuartz(q =>
+{
+    var jobKey = new JobKey(nameof(DailyStatsJob));
+
+    q.AddJob<DailyStatsJob>(opt => opt.WithIdentity(jobKey));
+
+    q.AddTrigger(opt => opt
+        .ForJob(jobKey)
+        .WithIdentity($"{nameof(DailyStatsJob)}-trigger")
+        // First run 15s after startup so summary tables populate immediately;
+        // then hourly, per the Detailed Implementation Plan.
+        .StartAt(DateBuilder.FutureDate(15, IntervalUnit.Second))
+        .WithSimpleSchedule(s => s.WithIntervalInHours(1).RepeatForever()));
+});
+
+builder.Services.AddQuartzHostedService(opt => opt.WaitForJobsToComplete = true);
 
 builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
