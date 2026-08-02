@@ -20,12 +20,38 @@ export const routes: Routes = [
           import('./pages/dashboard/dashboard.component').then(m => m.DashboardComponent),
       },
       {
+        path: 'employees',
+        loadComponent: () =>
+          import('./pages/employees/employees.component').then(m => m.EmployeesComponent),
+      },
+      {
+        path: 'employees/:cnic',
+        loadComponent: () =>
+          import('./pages/employees/employee-profile.component')
+            .then(m => m.EmployeeProfileComponent),
+      },
+      {
+        path: 'card-requests',
+        loadComponent: () =>
+          import('./pages/card-requests/card-requests.component')
+            .then(m => m.CardRequestsComponent),
+      },
+      {
+        path: 'visitors',
+        loadComponent: () =>
+          import('./pages/visitors/visitors.component').then(m => m.VisitorsComponent),
+      },
+      {
+        path: 'rfid',
+        loadComponent: () =>
+          import('./pages/rfid/rfid.component').then(m => m.RfidComponent),
+      },
+      {
         path: 'admin',
         canActivate: [roleGuard('Admin')],
         loadComponent: () =>
           import('./pages/dashboard/dashboard.component').then(m => m.DashboardComponent),
       },
-      // Phase 10 feature routes land here
     ],
   },
   { path: '**', redirectTo: '' },
