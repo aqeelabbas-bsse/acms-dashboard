@@ -1,7 +1,8 @@
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { CardRequestsService } from '../../core/services/card-requests.service';
 import { AuthService } from '../../core/services/auth.service';
+import { ToastService } from '../../core/services/toast.service';
 import { CardRequest, CardRequestStatus } from '../../core/models/api.models';
 import { GlassCardComponent } from '../../shared/ui/glass-card/glass-card.component';
 import { PageHeaderComponent } from '../../shared/ui/page-header/page-header.component';
@@ -34,12 +35,13 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
     </acms-page-header>
 
     @if (error()) {
-      <div class="alert"><acms-icon name="alert" [size]="16" /> {{ error() }}</div>
+      <div class="alert" role="alert"><acms-icon name="alert" [size]="16" /> {{ error() }}</div>
     }
 
     <acms-glass-card [flush]="true">
       @if (loading()) {
-        <div class="pad">
+        <div class="pad" role="status" aria-live="polite">
+          <span class="sr-only">Loading records</span>
           @for (i of [1,2,3,4,5]; track i) { <div class="skeleton row-sk"></div> }
         </div>
       } @else if (rows().length === 0) {
@@ -48,13 +50,14 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
       } @else {
         <div class="tbl-wrap">
           <table class="tbl">
+            <caption class="sr-only">Card requests and their workflow stage</caption>
             <thead>
               <tr>
-                <th>Request</th>
-                <th>CNIC</th>
-                <th>Stage</th>
-                <th>Last activity</th>
-                <th class="right">Actions</th>
+                <th scope="col">Request</th>
+                <th scope="col">CNIC</th>
+                <th scope="col">Stage</th>
+                <th scope="col">Last activity</th>
+                <th scope="col" class="right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -129,7 +132,7 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
                       placeholder="New card request / renewal reason..."></textarea>
           </label>
         </form>
-        @if (saveError()) { <div class="alert mt"><acms-icon name="alert" [size]="15" /> {{ saveError() }}</div> }
+        @if (saveError()) { <div class="alert mt" role="alert"><acms-icon name="alert" [size]="15" /> {{ saveError() }}</div> }
         <div modalFooter>
           <button class="btn btn--ghost" type="button" (click)="submitOpen.set(false)">Cancel</button>
           <button class="btn btn--primary" type="button" [disabled]="saving()" (click)="save()">
@@ -166,6 +169,7 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
 export class CardRequestsComponent {
   private readonly svc = inject(CardRequestsService);
   private readonly fb = inject(FormBuilder);
+  private readonly toast = inject(ToastService);
   protected readonly auth = inject(AuthService);
 
   protected readonly rows = signal<CardRequest[]>([]);
@@ -235,10 +239,15 @@ export class CardRequestsComponent {
   protected verify(c: CardRequest): void {
     this.busy.set(c.crid);
     this.svc.verify(c.crid).subscribe({
-      next: () => { this.busy.set(null); this.refresh(); },
+      next: () => {
+        this.busy.set(null);
+        this.toast.success(`Request #${c.crid} verified`);
+        this.refresh();
+      },
       error: err => {
         this.busy.set(null);
-        this.error.set(err?.error?.error?.message ?? 'Verification failed.');
+        this.toast.error('Verification failed',
+          err?.error?.error?.message ?? 'The server rejected the request.');
       },
     });
   }
@@ -246,12 +255,15 @@ export class CardRequestsComponent {
   protected print(c: CardRequest): void {
     this.busy.set(c.crid);
     this.svc.print(c.crid).subscribe({
-      next: () => { this.busy.set(null); this.refresh(); },
+      next: () => {
+        this.busy.set(null);
+        this.toast.success(`Request #${c.crid} marked printed`);
+        this.refresh();
+      },
       error: err => {
         this.busy.set(null);
-        // The API returns 400 if the request was never verified.
-        this.error.set(err?.error?.error?.message
-          ?? 'Print failed. A request must be verified before it can be printed.');
+        this.toast.error('Print failed', err?.error?.error?.message
+          ?? 'A request must be verified before it can be printed.');
       },
     });
   }
@@ -260,7 +272,12 @@ export class CardRequestsComponent {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }
     this.saving.set(true); this.saveError.set(null);
     this.svc.submit(this.form.getRawValue()).subscribe({
-      next: () => { this.saving.set(false); this.submitOpen.set(false); this.refresh(); },
+      next: () => {
+        this.saving.set(false);
+        this.submitOpen.set(false);
+        this.toast.success('Card request submitted');
+        this.refresh();
+      },
       error: err => {
         this.saving.set(false);
         this.saveError.set(err?.error?.error?.message ?? 'Could not submit the request.');

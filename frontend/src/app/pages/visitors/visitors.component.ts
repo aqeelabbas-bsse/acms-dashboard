@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, effect, inject, signal } from '@ang
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { VisitorsService } from '../../core/services/visitors.service';
 import { AuthService } from '../../core/services/auth.service';
+import { ToastService } from '../../core/services/toast.service';
+import { ConfirmService } from '../../core/services/confirm.service';
 import { Visitor } from '../../core/models/api.models';
 import { GlassCardComponent } from '../../shared/ui/glass-card/glass-card.component';
 import { PageHeaderComponent } from '../../shared/ui/page-header/page-header.component';
@@ -35,12 +37,13 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
     </acms-page-header>
 
     @if (error()) {
-      <div class="alert"><acms-icon name="alert" [size]="16" /> {{ error() }}</div>
+      <div class="alert" role="alert"><acms-icon name="alert" [size]="16" /> {{ error() }}</div>
     }
 
     <acms-glass-card [flush]="true">
       @if (loading()) {
-        <div class="pad">
+        <div class="pad" role="status" aria-live="polite">
+          <span class="sr-only">Loading records</span>
           @for (i of [1,2,3,4,5]; track i) { <div class="skeleton row-sk"></div> }
         </div>
       } @else if (rows().length === 0) {
@@ -50,14 +53,15 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
       } @else {
         <div class="tbl-wrap">
           <table class="tbl">
+            <caption class="sr-only">Visitor registrations and on-site status</caption>
             <thead>
               <tr>
-                <th>Visitor</th>
-                <th>Company</th>
-                <th>RFID card</th>
-                <th>Entry</th>
-                <th>Status</th>
-                <th class="right">Actions</th>
+                <th scope="col">Visitor</th>
+                <th scope="col">Company</th>
+                <th scope="col">RFID card</th>
+                <th scope="col">Entry</th>
+                <th scope="col">Status</th>
+                <th scope="col" class="right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -134,7 +138,7 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
             <input type="text" formControlName="cardSerialNumber" placeholder="VRFID-009" />
           </label>
         </form>
-        @if (saveError()) { <div class="alert mt"><acms-icon name="alert" [size]="15" /> {{ saveError() }}</div> }
+        @if (saveError()) { <div class="alert mt" role="alert"><acms-icon name="alert" [size]="15" /> {{ saveError() }}</div> }
         <div modalFooter>
           <button class="btn btn--ghost" type="button" (click)="registerOpen.set(false)">Cancel</button>
           <button class="btn btn--primary" type="button" [disabled]="saving()" (click)="save()">
@@ -156,12 +160,14 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
     .pad { padding: var(--s-6); display: grid; gap: 10px; }
     .pad-x { padding: 0 var(--s-6) var(--s-5); }
     .row-sk { height: 40px; }
-    .sub { font-size: var(--fs-xs); color: var(--ink-dim); margin-top: 1px; }
+    .sub { font-size: var(--fs-xs); color: var(--ink-muted); margin-top: 1px; }
   `],
 })
 export class VisitorsComponent {
   private readonly svc = inject(VisitorsService);
   private readonly fb = inject(FormBuilder);
+  private readonly toast = inject(ToastService);
+  private readonly confirm = inject(ConfirmService);
   protected readonly auth = inject(AuthService);
 
   protected readonly rows = signal<Visitor[]>([]);
@@ -222,13 +228,26 @@ export class VisitorsComponent {
     this.form.reset(); this.saveError.set(null); this.registerOpen.set(true);
   }
 
-  protected checkout(v: Visitor): void {
+  protected async checkout(v: Visitor): Promise<void> {
+    const ok = await this.confirm.ask({
+      title: 'Check out visitor',
+      message: `Record ${v.name || 'this visitor'} as having left the site? `
+             + `This sets their exit timestamp and cannot be undone from here.`,
+      confirmLabel: 'Check out',
+    });
+    if (!ok) return;
+
     this.busy.set(v.id);
     this.svc.checkout(v.id).subscribe({
-      next: () => { this.busy.set(null); this.refresh(); },
+      next: () => {
+        this.busy.set(null);
+        this.toast.success('Visitor checked out', v.name ?? undefined);
+        this.refresh();
+      },
       error: err => {
         this.busy.set(null);
-        this.error.set(err?.error?.error?.message ?? 'Check-out failed.');
+        this.toast.error('Check-out failed',
+          err?.error?.error?.message ?? 'The server rejected the request.');
       },
     });
   }
@@ -237,7 +256,12 @@ export class VisitorsComponent {
     if (this.form.invalid) { this.form.markAllAsTouched(); return; }
     this.saving.set(true); this.saveError.set(null);
     this.svc.register(this.form.getRawValue()).subscribe({
-      next: () => { this.saving.set(false); this.registerOpen.set(false); this.refresh(); },
+      next: () => {
+        this.saving.set(false);
+        this.registerOpen.set(false);
+        this.toast.success('Visitor registered', 'Entry recorded and card issued.');
+        this.refresh();
+      },
       error: err => {
         this.saving.set(false);
         this.saveError.set(err?.error?.error?.message ?? 'Could not register the visitor.');

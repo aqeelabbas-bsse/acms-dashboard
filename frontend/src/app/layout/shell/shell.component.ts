@@ -4,14 +4,17 @@ import { AuroraBackgroundComponent } from '../aurora-background/aurora-backgroun
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
+import { ToastHostComponent } from '../../shared/ui/toast-host/toast-host.component';
+import { ConfirmHostComponent } from "../../shared/ui/confirm-host/confirm-host.component";
 
 @Component({
   selector: 'acms-shell',
   standalone: true,
   imports: [RouterOutlet, AuroraBackgroundComponent, SidebarComponent,
-            TopbarComponent, IconComponent],
+    TopbarComponent, IconComponent, ToastHostComponent, ConfirmHostComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+  <a class="skip" href="#main">Skip to main content</a>
     <acms-aurora-background />
 
     <div class="shell">
@@ -32,6 +35,9 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
     <button class="orb" type="button" (click)="onAskAgent()" aria-label="Ask ACMS">
       <acms-icon name="sparkle" [size]="22" [weight]="2" />
     </button>
+
+    <acms-toast-host />
+    <acms-confirm-host />
   `,
   styles: [`
     .shell { display: flex; min-height: 100vh; padding: 18px 20px 20px 18px; gap: 18px; }

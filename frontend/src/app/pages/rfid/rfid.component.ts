@@ -2,6 +2,7 @@ import { ChangeDetectionStrategy, Component, computed, effect, inject, signal } 
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { VisitorRfidService } from '../../core/services/visitor-rfid.service';
 import { AuthService } from '../../core/services/auth.service';
+import { ToastService } from '../../core/services/toast.service';
 import { VisitorRfid } from '../../core/models/api.models';
 import { GlassCardComponent } from '../../shared/ui/glass-card/glass-card.component';
 import { PageHeaderComponent } from '../../shared/ui/page-header/page-header.component';
@@ -26,7 +27,7 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
     </acms-page-header>
 
     @if (error()) {
-      <div class="alert"><acms-icon name="alert" [size]="16" /> {{ error() }}</div>
+      <div class="alert" role="alert"><acms-icon name="alert" [size]="16" /> {{ error() }}</div>
     }
 
     <section class="tiles stagger">
@@ -37,7 +38,8 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
 
     <acms-glass-card [flush]="true">
       @if (loading()) {
-        <div class="pad">
+        <div class="pad" role="status" aria-live="polite">
+          <span class="sr-only">Loading records</span>
           @for (i of [1,2,3,4]; track i) { <div class="skeleton row-sk"></div> }
         </div>
       } @else if (rows().length === 0) {
@@ -46,13 +48,14 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
       } @else {
         <div class="tbl-wrap">
           <table class="tbl">
+            <caption class="sr-only">RFID cards and their block status</caption>
             <thead>
               <tr>
-                <th>Card number</th>
-                <th>Status</th>
-                <th>Presence</th>
-                <th>Activated</th>
-                <th class="right">Actions</th>
+                <th scope="col">Card number</th>
+                <th scope="col">Status</th>
+                <th scope="col">Presence</th>
+                <th scope="col">Activated</th>
+                <th scope="col" class="right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -108,7 +111,7 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
           </label>
         </form>
 
-        @if (saveError()) { <div class="alert mt"><acms-icon name="alert" [size]="15" /> {{ saveError() }}</div> }
+        @if (saveError()) { <div class="alert mt" role="alert"><acms-icon name="alert" [size]="15" /> {{ saveError() }}</div> }
 
         <div modalFooter>
           <button class="btn btn--ghost" type="button" (click)="blocking.set(null)">Cancel</button>
@@ -165,6 +168,7 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
 export class RfidComponent {
   private readonly svc = inject(VisitorRfidService);
   private readonly fb = inject(FormBuilder);
+  private readonly toast = inject(ToastService);
   protected readonly auth = inject(AuthService);
 
   protected readonly rows = signal<VisitorRfid[]>([]);
@@ -222,7 +226,12 @@ export class RfidComponent {
 
     this.saving.set(true); this.saveError.set(null);
     this.svc.block(card.smartCardNo, this.form.getRawValue().reason).subscribe({
-      next: () => { this.saving.set(false); this.blocking.set(null); this.fetch(this.scope()); },
+      next: () => {
+        this.saving.set(false);
+        this.blocking.set(null);
+        this.toast.warn('Card blocked', `${card.smartCardNo} can no longer access the site.`);
+        this.fetch(this.scope());
+      },
       error: err => {
         this.saving.set(false);
         this.saveError.set(err?.error?.error?.message ?? 'Could not block the card.');

@@ -22,7 +22,7 @@ import { DonutChartComponent, DonutSlice } from '../../shared/ui/donut-chart/don
     <header class="page rise">
       <div>
         <div class="eyebrow">{{ today }}</div>
-        <h1 class="title">Good {{ partOfDay }}, <span class="grad-text">Aqeel</span></h1>
+        <h1 class="title">Good {{ partOfDay }}, <span class="grad-text">Muhammad Aqeel Abbas</span></h1>
         <p class="sub">Here's what's happening across access control right now.</p>
       </div>
       <div class="tools">
@@ -52,7 +52,7 @@ import { DonutChartComponent, DonutSlice } from '../../shared/ui/donut-chart/don
         [value]="kpi()?.totalEmployees ?? null" [loading]="loading()"
         [spark]="submittedSeries()" note="Registered smart-card profiles" />
 
-      <acms-kpi-card label="Active cards" tone="teal" icon="card"
+      <acms-kpi-card label="Active cards" tone="cyan" icon="card"
         [value]="kpi()?.activeCards ?? null" [loading]="loading()"
         [spark]="printedSeries()" note="Cards issued and active" />
 
@@ -60,7 +60,7 @@ import { DonutChartComponent, DonutSlice } from '../../shared/ui/donut-chart/don
         [value]="kpi()?.onSiteNow ?? null" [loading]="loading()"
         note="Visitors not yet checked out" />
 
-      <acms-kpi-card label="Pending requests" tone="amber" icon="clock"
+      <acms-kpi-card label="Pending requests" tone="rose" icon="clock"
         [value]="kpi()?.pendingRequests ?? null" [loading]="loading()"
         note="Awaiting verification or printing" />
     </section>

@@ -1,17 +1,19 @@
 import { ChangeDetectionStrategy, Component, HostListener, input, output } from '@angular/core';
 import { IconComponent } from '../icon/icon.component';
+import { FocusTrapDirective } from '../../directives/focus-trap.directive';
 
 @Component({
   selector: 'acms-modal',
   standalone: true,
-  imports: [IconComponent],
+  imports: [IconComponent, FocusTrapDirective],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="scrim" (click)="close.emit()"></div>
-    <div class="dlg" role="dialog" aria-modal="true" [style.max-width.px]="width()">
+    <div class="dlg" role="dialog" aria-modal="true" acmsFocusTrap
+         [attr.aria-labelledby]="titleId" [style.max-width.px]="width()">
       <header class="hd">
         <div>
-          <h2 class="t">{{ title() }}</h2>
+          <h2 class="t" [id]="titleId">{{ title() }}</h2>
           @if (subtitle()) { <p class="s">{{ subtitle() }}</p> }
         </div>
         <button type="button" class="x" (click)="close.emit()" aria-label="Close">
@@ -74,6 +76,8 @@ export class ModalComponent {
   readonly subtitle = input<string>();
   readonly width = input(480);
   readonly close = output<void>();
+
+  protected readonly titleId = `dlg-${Math.random().toString(36).slice(2, 9)}`;
 
   @HostListener('document:keydown.escape')
   protected onEscape(): void { this.close.emit(); }
