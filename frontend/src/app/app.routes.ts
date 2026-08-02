@@ -1,10 +1,17 @@
 import { Routes } from '@angular/router';
 import { ShellComponent } from './layout/shell/shell.component';
+import { authGuard, roleGuard } from './core/guards/auth.guard';
 
 export const routes: Routes = [
   {
+    path: 'login',
+    loadComponent: () =>
+      import('./pages/login/login.component').then(m => m.LoginComponent),
+  },
+  {
     path: '',
     component: ShellComponent,
+    canActivate: [authGuard],       // guards every child in one place
     children: [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
       {
@@ -12,8 +19,13 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./pages/dashboard/dashboard.component').then(m => m.DashboardComponent),
       },
-      // Phase 9 adds /login (outside the shell) plus guards.
-      // Phase 10 adds employees / card-requests / visitors / rfid.
+      {
+        path: 'admin',
+        canActivate: [roleGuard('Admin')],
+        loadComponent: () =>
+          import('./pages/dashboard/dashboard.component').then(m => m.DashboardComponent),
+      },
+      // Phase 10 feature routes land here
     ],
   },
   { path: '**', redirectTo: '' },

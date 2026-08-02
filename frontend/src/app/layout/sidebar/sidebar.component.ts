@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, output } from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { IconName } from '../../shared/ui/icon/icons';
 import { Role } from '../../core/models/api.models';
+import { AuthService } from '../../core/services/auth.service';
 
 interface NavItem { label: string; path: string; icon: IconName; roles?: Role[]; }
 interface NavGroup { title: string; items: NavItem[]; }
@@ -26,13 +27,15 @@ interface NavGroup { title: string; items: NavItem[]; }
         @for (g of groups; track g.title) {
           <div class="group">{{ g.title }}</div>
           @for (item of g.items; track item.path) {
-            <a class="nav" [routerLink]="item.path"
-               routerLinkActive="active"
-               [routerLinkActiveOptions]="{ exact: false }"
-               (click)="navigate.emit()">
-              <acms-icon [name]="item.icon" [size]="18" />
-              <span>{{ item.label }}</span>
-            </a>
+            @if (!item.roles || auth.hasRole(...item.roles)) {
+              <a class="nav" [routerLink]="item.path"
+                 routerLinkActive="active"
+                 [routerLinkActiveOptions]="{ exact: false }"
+                 (click)="navigate.emit()">
+                <acms-icon [name]="item.icon" [size]="18" />
+                <span>{{ item.label }}</span>
+              </a>
+            }
           }
         }
       </nav>
@@ -138,6 +141,8 @@ export class SidebarComponent {
   readonly open = input(false);
   readonly navigate = output<void>();
   readonly askAgent = output<void>();
+
+  protected readonly auth = inject(AuthService);
 
   protected readonly groups: NavGroup[] = [
     { title: 'Overview', items: [

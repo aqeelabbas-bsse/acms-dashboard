@@ -42,12 +42,27 @@ import { ThemeService } from '../../core/services/theme.service';
           <span class="badge"></span>
         </button>
 
-        <div class="user">
+        <div class="user" (click)="menuOpen.set(!menuOpen())" tabindex="0" role="button"
+             (keydown.enter)="menuOpen.set(!menuOpen())" aria-haspopup="menu">
           <div class="avatar">{{ auth.initials() }}</div>
           <div class="meta">
-            <div class="name">{{ auth.username() }}</div>
-            <div class="role">{{ auth.role() ?? 'Not signed in' }}</div>
+            <div class="name">{{ auth.username() ?? 'Unknown' }}</div>
+            <div class="role">{{ auth.role() ?? 'No role' }}</div>
           </div>
+          <acms-icon class="caret" name="chevron" [size]="15" [weight]="2" />
+
+          @if (menuOpen()) {
+            <div class="menu" role="menu">
+              <div class="menu__head">
+                <div class="menu__name">{{ auth.username() }}</div>
+                <span class="pill pill--violet">{{ auth.role() }}</span>
+              </div>
+              <button class="menu__item" type="button" (click)="logout($event)">
+                <acms-icon name="logout" [size]="16" />
+                Sign out
+              </button>
+            </div>
+          }
         </div>
       </div>
     </header>
@@ -118,11 +133,12 @@ import { ThemeService } from '../../core/services/theme.service';
       width: 7px; height: 7px; border-radius: 50%; background: var(--rose);
     }
 
-    .user {
+    .user { position: relative; user-select: none;
       display: flex; align-items: center; gap: 9px;
       padding: 4px 14px 4px 4px; border-radius: var(--r-pill);
       background: var(--hover-wash); cursor: pointer;
     }
+    .caret { color: var(--ink-dim); }
     .avatar {
       width: 30px; height: 30px; border-radius: 50%;
       display: grid; place-items: center;
@@ -131,6 +147,35 @@ import { ThemeService } from '../../core/services/theme.service';
     }
     .name { font-size: var(--fs-sm); font-weight: 600; line-height: 1.2; }
     .role { font-size: var(--fs-xs); color: var(--ink-dim); }
+
+    .menu {
+      position: absolute; top: calc(100% + 10px); right: 0;
+      min-width: 208px; padding: var(--s-2);
+      border-radius: var(--r-md);
+      border: 1px solid var(--glass-border);
+      background: var(--glass-strong);
+      backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
+      -webkit-backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
+      box-shadow: var(--sh-lift), var(--glass-inset);
+      animation: riseIn var(--t-base) var(--ease) both;
+      z-index: 40;
+    }
+    .menu__head {
+      display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
+      padding: var(--s-3); margin-bottom: var(--s-2);
+      border-bottom: 1px solid var(--track);
+    }
+    .menu__name { font-size: var(--fs-sm); font-weight: 600; }
+    .menu__item {
+      display: flex; align-items: center; gap: var(--s-3);
+      width: 100%; padding: 10px var(--s-3);
+      border: none; border-radius: var(--r-sm);
+      background: transparent; color: var(--ink-soft);
+      font-family: var(--font-body); font-size: var(--fs-sm);
+      text-align: left; cursor: pointer;
+      transition: all var(--t-fast) var(--ease);
+    }
+    .menu__item:hover { background: var(--danger-bg); color: var(--danger-fg); }
 
     @media (max-width: 1024px) { .burger { display: grid; } }
     @media (max-width: 820px)  { .search, .meta { display: none; } }
@@ -142,6 +187,7 @@ export class TopbarComponent {
   protected readonly auth = inject(AuthService);
   protected readonly theme = inject(ThemeService);
   protected readonly focused = signal(false);
+  protected readonly menuOpen = signal(false);
 
   private readonly searchInput = viewChild<ElementRef<HTMLInputElement>>('searchInput');
 
@@ -152,5 +198,11 @@ export class TopbarComponent {
       e.preventDefault();
       this.searchInput()?.nativeElement.focus();
     }
+  }
+
+  protected logout(event: Event): void {
+    event.stopPropagation();
+    this.menuOpen.set(false);
+    this.auth.logout();
   }
 }
