@@ -528,3 +528,41 @@ html {
   transition: top var(--t-base) var(--ease);
 }
 .skip:focus { top: 20px; }
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #1a1b2e !important;
+  }
+  /* Only true glass surfaces need de-blurring - gradient KPI cards
+     already render solid and must NOT be touched here. */
+  .card, .dlg {
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid #d8dae8 !important;
+    box-shadow: none !important;
+  }
+  .card .title, .card .t, .card__title,
+  .card .sub, .card .s, .card__sub {
+    color: #1a1b2e !important;
+  }
+  .kpi[data-tone] {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .grad-text {
+    background: none !important;
+    -webkit-text-fill-color: var(--violet-deep) !important;
+    color: var(--violet-deep) !important;
+  }
+
+  /* Fix 2: stop cards splitting across page boundaries */
+  .card, .kpi, .dlg {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  
+  img.print-chart-snapshot { break-inside: avoid; max-width: 100%; }
+}

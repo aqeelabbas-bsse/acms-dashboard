@@ -17,10 +17,29 @@ export interface KpiSummary {
   pendingRequests: number;
 }
 
-export interface FunnelStats {
+/**
+ * Matches the REAL shape of GET /v1/analytics/funnel - a daily time series
+ * plus aggregate totals, not a flat { submitted, verified, printed } object
+ * as originally assumed. Confirmed against the live API response.
+ */
+export interface FunnelPoint {
+  date: string;
   submitted: number;
   verified: number;
   printed: number;
+  conversionRate: number;
+  bottleneckStage: string;
+}
+
+export interface FunnelStats {
+  points: FunnelPoint[];
+  totals: {
+    submitted: number;
+    verified: number;
+    printed: number;
+    overallConversionRate: number;
+    avgProcessingHours: number;
+  };
 }
 
 export type Role = 'Admin' | 'Security' | 'Printer' | 'Viewer';
