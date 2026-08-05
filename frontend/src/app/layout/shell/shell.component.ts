@@ -1,17 +1,20 @@
-import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { AuroraBackgroundComponent } from '../aurora-background/aurora-background.component';
 import { SidebarComponent } from '../sidebar/sidebar.component';
 import { TopbarComponent } from '../topbar/topbar.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { ToastHostComponent } from '../../shared/ui/toast-host/toast-host.component';
-import { ConfirmHostComponent } from "../../shared/ui/confirm-host/confirm-host.component";
+import { ConfirmHostComponent } from '../../shared/ui/confirm-host/confirm-host.component';
+import { AgentPanelComponent } from '../../shared/ui/agent/agent-panel.component';
+import { AgentService } from '../../core/services/agent.service';
 
 @Component({
   selector: 'acms-shell',
   standalone: true,
   imports: [RouterOutlet, AuroraBackgroundComponent, SidebarComponent,
-    TopbarComponent, IconComponent, ToastHostComponent, ConfirmHostComponent],
+    TopbarComponent, IconComponent, ToastHostComponent, ConfirmHostComponent,
+    AgentPanelComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
   <a class="skip" href="#main">Skip to main content</a>
@@ -36,6 +39,7 @@ import { ConfirmHostComponent } from "../../shared/ui/confirm-host/confirm-host.
       <acms-icon name="sparkle" [size]="22" [weight]="2" />
     </button>
 
+    <acms-agent-panel />
     <acms-toast-host />
     <acms-confirm-host />
   `,
@@ -79,9 +83,9 @@ import { ConfirmHostComponent } from "../../shared/ui/confirm-host/confirm-host.
 })
 export class ShellComponent {
   readonly navOpen = signal(false);
+  protected readonly agent = inject(AgentService);
 
   protected onAskAgent(): void {
-    // Phase 13 opens the NL agent slide-over from here.
-    console.info('[ACMS] Agent panel arrives in Phase 13');
+    this.agent.open();
   }
 }
