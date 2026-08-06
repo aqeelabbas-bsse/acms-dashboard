@@ -3,13 +3,14 @@ import {
   inject, output, signal, viewChild,
 } from '@angular/core';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
+import { NotificationBellComponent } from '../../shared/ui/notification-bell/notification-bell.component';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
 
 @Component({
   selector: 'acms-topbar',
   standalone: true,
-  imports: [IconComponent],
+  imports: [IconComponent, NotificationBellComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <header class="top">
@@ -37,10 +38,10 @@ import { ThemeService } from '../../core/services/theme.service';
           </button>
         </div>
 
-        <button class="circle" type="button" aria-label="Notifications">
-          <acms-icon name="bell" [size]="17" />
-          <span class="badge"></span>
-        </button>
+        <!-- FR-RT-03: replaces the old static bell + hardcoded dot. Owns its
+             own trigger, badge, and dropdown panel - nothing else in the
+             topbar needs to know about it. -->
+        <acms-notification-bell />
 
         <div class="user" (click)="menuOpen.set(!menuOpen())" tabindex="0" role="button"
              (keydown.enter)="menuOpen.set(!menuOpen())" aria-haspopup="menu">
@@ -119,18 +120,6 @@ import { ThemeService } from '../../core/services/theme.service';
     .tt button.on {
       background: var(--glass-strong); color: var(--violet-fg);
       box-shadow: 0 2px 6px rgba(0,0,0,.12);
-    }
-
-    .circle {
-      position: relative; width: 38px; height: 38px; border-radius: 50%;
-      display: grid; place-items: center; border: none; cursor: pointer;
-      background: var(--hover-wash); color: var(--ink-soft);
-      transition: background var(--t-fast) var(--ease);
-    }
-    .circle:hover { background: var(--hover-wash-2); }
-    .badge {
-      position: absolute; top: 8px; right: 9px;
-      width: 7px; height: 7px; border-radius: 50%; background: var(--rose);
     }
 
     .user { position: relative; user-select: none;

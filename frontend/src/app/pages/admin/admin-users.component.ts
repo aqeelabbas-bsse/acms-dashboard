@@ -27,32 +27,54 @@ import { UserFormModalComponent } from './user-form-modal.component';
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <!-- Stat tiles. Built inline rather than reusing KpiCardComponent: those
-         carry fixed gradient artwork sized for the dashboard's 4-up hero row,
-         which reads as visual shouting on a settings screen. -->
+    <!-- Stat tiles, matching the dashboard's KpiCardComponent treatment:
+         angled gradient fill (deep on the text side, vivid in the decorative
+         corner - contrast-checked, not just a bright block), a soft corner
+         glow, and a specular sheen sweep on hover. NOT wrapped in
+         acms-glass-card - these are solid gradient surfaces like the real
+         KPI cards, not translucent glass. Deactivated deliberately uses a
+         desaturated slate gradient instead of a vivid tone, so the one
+         "off" stat visually reads as quieter than the other three. -->
     <div class="tiles">
       @for (t of tiles(); track t.label) {
-        <acms-glass-card>
-          <div class="tile">
-            <span class="tile__icon" [attr.data-tone]="t.tone">
-              <acms-icon [name]="t.icon" [size]="18" [weight]="2.2" />
-            </span>
-            <div class="tile__body">
-              <span class="tile__value">{{ t.value }}</span>
-              <span class="tile__label">{{ t.label }}</span>
-            </div>
+        <div class="tile" [attr.data-tone]="t.tone">
+          <span class="tile__glow" aria-hidden="true"></span>
+          <span class="tile__sheen" aria-hidden="true"></span>
+          <span class="tile__icon">
+            <acms-icon [name]="t.icon" [size]="18" [weight]="2.2" />
+          </span>
+          <div class="tile__body">
+            <span class="tile__value">{{ t.value }}</span>
+            <span class="tile__label">{{ t.label }}</span>
           </div>
-        </acms-glass-card>
+        </div>
       }
     </div>
 
-    <div class="toolbar">
-      <acms-search-input [(value)]="search" placeholder="Search username or email..." />
-      <acms-segmented [options]="roleOptions" [(value)]="roleFilter" />
-      <acms-segmented [options]="statusOptions" [(value)]="statusFilter" />
-      <button class="btn btn--primary" type="button" (click)="openCreate()">
-        New account
-      </button>
+    <!-- Row 1: search + the primary action, together - this is what you scan
+         for first. Row 2: filters, visually demoted and labeled so "Role"
+         and "Status" read as two distinct groups instead of two unlabeled
+         segmented controls sitting next to each other. -->
+    <div class="controls">
+      <div class="controls__top">
+        <acms-search-input class="controls__search" [(value)]="search"
+                            placeholder="Search username or email..." />
+        <button class="btn btn--primary" type="button" (click)="openCreate()">
+          New account
+        </button>
+      </div>
+
+      <div class="controls__filters">
+        <div class="filter-group">
+          <span class="filter-group__label">Role</span>
+          <acms-segmented [options]="roleOptions" [(value)]="roleFilter" />
+        </div>
+        <span class="filter-divider" aria-hidden="true"></span>
+        <div class="filter-group">
+          <span class="filter-group__label">Status</span>
+          <acms-segmented [options]="statusOptions" [(value)]="statusFilter" />
+        </div>
+      </div>
     </div>
 
     @if (error()) {
@@ -111,19 +133,20 @@ import { UserFormModalComponent } from './user-form-modal.component';
                   </td>
                   <td class="ta-r">
                     <div class="row-actions">
-                      <button class="btn btn--sm" type="button"
+                      <button class="row-btn row-btn--ghost" type="button"
                               [disabled]="busyId() === u.id"
                               (click)="openEdit(u)">
                         Edit
                       </button>
-                      <button class="btn btn--sm"
-                              [class.btn--danger]="u.isActive"
+                      <button class="row-btn"
+                              [class.row-btn--danger]="u.isActive"
+                              [class.row-btn--ok]="!u.isActive"
                               type="button"
                               [disabled]="busyId() === u.id || isMe(u)"
                               [attr.title]="isMe(u) ? 'You cannot deactivate your own account' : null"
                               (click)="toggleStatus(u)">
                         @if (busyId() === u.id) {
-                          Working...
+                          Working&hellip;
                         } @else {
                           {{ u.isActive ? 'Deactivate' : 'Reactivate' }}
                         }
@@ -157,30 +180,105 @@ import { UserFormModalComponent } from './user-form-modal.component';
       display: grid; gap: 14px; margin-bottom: 18px;
       grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     }
-    .tile { display: flex; align-items: center; gap: 12px; }
-    .tile__icon {
-      display: grid; place-items: center; width: 38px; height: 38px;
-      border-radius: 11px; flex: none;
-      background: color-mix(in srgb, var(--tone, #8B5CF6) 16%, transparent);
-      color: var(--tone, #8B5CF6);
+
+    /* --- Tile: same treatment as the dashboard's KpiCardComponent -------
+       Angled 2-stop gradient - deep/legible on the text side, vivid in the
+       decorative corner where only the glow lives. Every stop below is
+       contrast-checked against white text (6.3-7.7:1), not just a bright
+       colour picked by eye. ------------------------------------------------ */
+    .tile {
+      position: relative; overflow: hidden;
+      display: flex; align-items: center; gap: 12px;
+      padding: 18px; border-radius: var(--r-lg, 16px);
+      color: #fff;
+      box-shadow: 0 10px 28px -8px rgba(20, 20, 50, .35);
+      transition: transform .22s var(--ease-out, ease), box-shadow .22s var(--ease-out, ease);
     }
-    .tile__icon[data-tone="ok"]     { --tone: #10B981; }
-    .tile__icon[data-tone="muted"]  { --tone: #64748B; }
-    .tile__icon[data-tone="violet"] { --tone: #8B5CF6; }
-    .tile__icon[data-tone="rose"]   { --tone: #E11D48; }
-    .tile__body { display: grid; }
+    .tile:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 16px 36px -10px rgba(20, 20, 50, .44);
+    }
+
+    .tile[data-tone="violet"] { background: linear-gradient(135deg, #4C3BC4 0%, #6D28D9 55%, #8B5CF6 100%); }
+    .tile[data-tone="cyan"]   { background: linear-gradient(135deg, #155E75 0%, #0E7490 55%, #22D3EE 100%); }
+    .tile[data-tone="rose"]   { background: linear-gradient(135deg, #BE123C 0%, #E11D48 55%, #FB7185 100%); }
+    /* Deliberately desaturated - this tile represents an "off" state, and
+       the colour itself should read as quieter than the other three. */
+    .tile[data-tone="muted"]  { background: linear-gradient(135deg, #334155 0%, #475569 55%, #64748B 100%); }
+
+    /* Soft corner bloom - the same "something lit is happening here" cue
+       as the dashboard cards, positioned so it never sits under the text. */
+    .tile__glow {
+      position: absolute; top: -34%; right: -18%;
+      width: 62%; aspect-ratio: 1; border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,.32) 0%, transparent 70%);
+      pointer-events: none;
+      transition: opacity .3s ease, transform .3s ease;
+    }
+    .tile:hover .tile__glow { opacity: .85; transform: scale(1.1); }
+
+    /* Specular sweep - a diagonal band of light crossing the card on hover,
+       identical technique to the glass-card and KPI-card sheen. */
+    .tile__sheen {
+      position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+      background: linear-gradient(105deg,
+        transparent 34%, rgba(255,255,255,.14) 47%,
+        rgba(255,255,255,.05) 55%, transparent 64%);
+      transform: translateX(-125%);
+      transition: transform 700ms cubic-bezier(.16,1,.3,1);
+    }
+    .tile:hover .tile__sheen { transform: translateX(125%); }
+
+    .tile__icon {
+      position: relative; z-index: 1; flex: none;
+      display: grid; place-items: center; width: 40px; height: 40px;
+      border-radius: 12px; color: #fff;
+      background: rgba(255,255,255,.16);
+      border: 1px solid rgba(255,255,255,.22);
+      transition: transform .22s var(--ease-spring, ease);
+    }
+    .tile:hover .tile__icon { transform: scale(1.08) rotate(-3deg); }
+
+    .tile__body { position: relative; z-index: 1; display: grid; min-width: 0; }
     .tile__value {
       font-family: var(--font-display, inherit);
-      font-size: 1.5rem; font-weight: 700; line-height: 1.1;
+      font-size: 1.55rem; font-weight: 700; line-height: 1.1; color: #fff;
       font-variant-numeric: tabular-nums;
+      background: linear-gradient(180deg, #fff 0%, rgba(255,255,255,.86) 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
     }
-    .tile__label { font-size: .76rem; opacity: .75; }
+    .tile__label { font-size: .76rem; color: rgba(255,255,255,.86); }
 
-    .toolbar {
-      display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-      margin-bottom: 14px;
+    /* --- Controls: two rows, deliberately unequal weight ------------------
+       Row 1 (top) is the primary scan line - search plus the one action that
+       matters most. Row 2 is filters, visually quieter and explicitly
+       labeled per group so "Role" and "Status" never read as one ambiguous
+       cluster of segmented controls. */
+    .controls { margin-bottom: 18px; }
+
+    .controls__top {
+      display: flex; gap: 12px; align-items: center;
+      margin-bottom: 12px;
     }
-    .toolbar > acms-search-input { flex: 1 1 240px; }
+    .controls__search { flex: 1 1 auto; min-width: 0; }
+    .controls__top > .btn { flex: none; }
+
+    .controls__filters {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
+      padding: 10px 14px;
+      border-radius: var(--r-md, 10px);
+      background: color-mix(in srgb, currentColor 4%, transparent);
+      border: 1px solid var(--line, rgba(127,127,127,.14));
+    }
+    .filter-group { display: flex; align-items: center; gap: 9px; }
+    .filter-group__label {
+      font-size: .72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .06em; opacity: .55; white-space: nowrap;
+    }
+    .filter-divider {
+      width: 1px; align-self: stretch; min-height: 22px;
+      background: var(--line, rgba(127,127,127,.22));
+    }
 
     .table-wrap { overflow-x: auto; }
     .ta-r { text-align: right; }
@@ -224,12 +322,52 @@ import { UserFormModalComponent } from './user-form-modal.component';
     .pill[data-tone="ok"]     { --tone: #047857; }
     .pill[data-tone="muted"]  { --tone: #475569; }
 
+    /* --- Row actions: Edit is quiet and routine; Deactivate/Reactivate is
+       outlined in its semantic colour and only goes solid on hover, so the
+       two buttons read as different weights of action, not identical. ----- */
     .row-actions { display: inline-flex; gap: 8px; justify-content: flex-end; }
+
+    .row-btn {
+      padding: 6px 13px; border-radius: 999px;
+      font-size: .78rem; font-weight: 650; line-height: 1.2;
+      cursor: pointer; white-space: nowrap;
+      border: 1px solid transparent;
+      transition: background .15s ease, border-color .15s ease, color .15s ease, opacity .15s ease;
+    }
+    .row-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+    .row-btn--ghost {
+      background: transparent; color: inherit;
+      border-color: var(--line, rgba(127,127,127,.3));
+    }
+    .row-btn--ghost:hover:not(:disabled) {
+      background: color-mix(in srgb, currentColor 8%, transparent);
+    }
+
+    .row-btn--danger {
+      background: transparent; color: #E11D48;
+      border-color: color-mix(in srgb, #E11D48 45%, transparent);
+    }
+    .row-btn--danger:hover:not(:disabled) {
+      background: #E11D48; color: #fff; border-color: #E11D48;
+    }
+
+    .row-btn--ok {
+      background: transparent; color: #059669;
+      border-color: color-mix(in srgb, #059669 45%, transparent);
+    }
+    .row-btn--ok:hover:not(:disabled) {
+      background: #059669; color: #fff; border-color: #059669;
+    }
 
     .pad-sm { padding: 12px 16px; }
 
     @media (max-width: 720px) {
-      .toolbar > acms-search-input { flex: 1 1 100%; }
+      .controls__top { flex-wrap: wrap; }
+      .controls__top > .btn { flex: 1 1 100%; order: -1; }
+      .controls__search { flex: 1 1 100%; }
+      .controls__filters { flex-direction: column; align-items: flex-start; }
+      .filter-divider { display: none; }
     }
   `],
 })
@@ -256,7 +394,7 @@ export class AdminUsersComponent implements OnDestroy {
   readonly stats = signal<AdminStats | null>(null);
 
   readonly roleOptions: SegmentOption[] = [
-    { label: 'All roles', value: '' },
+    { label: 'All', value: '' },
     { label: 'Admin', value: 'Admin' },
     { label: 'Security', value: 'Security' },
     { label: 'Printer', value: 'Printer' },
@@ -277,10 +415,10 @@ export class AdminUsersComponent implements OnDestroy {
     // `as const` preserves literal string types so they satisfy IconComponent's
     // strict `name` union. 'userX' isn't a registered icon here - reusing
     // 'users' for the Deactivated tile until a dedicated icon is confirmed;
-    // the tone colour still carries the distinction visually.
+    // the gradient tone still carries the distinction visually.
     return [
       { label: 'Total accounts', value: s?.totalUsers ?? '-',   icon: 'users',     tone: 'violet' },
-      { label: 'Active',         value: s?.activeUsers ?? '-',  icon: 'userCheck', tone: 'ok' },
+      { label: 'Active',         value: s?.activeUsers ?? '-',  icon: 'userCheck', tone: 'cyan' },
       { label: 'Deactivated',    value: s?.inactiveUsers ?? '-',icon: 'users',     tone: 'muted' },
       { label: 'Admins',         value: s?.byRole?.['Admin'] ?? '-', icon: 'shield', tone: 'rose' },
     ] as const;
