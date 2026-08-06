@@ -47,10 +47,13 @@ export const routes: Routes = [
           import('./pages/rfid/rfid.component').then(m => m.RfidComponent),
       },
       {
+        // Phase 14: real Admin Console (user management + sign-off view),
+        // replacing the DashboardComponent placeholder that lived here
+        // through Phase 13.
         path: 'admin',
         canActivate: [roleGuard('Admin')],
         loadComponent: () =>
-          import('./pages/dashboard/dashboard.component').then(m => m.DashboardComponent),
+          import('./pages/admin/admin.component').then(m => m.AdminComponent),
       },
     ],
   },

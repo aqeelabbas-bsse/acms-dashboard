@@ -26,18 +26,46 @@ public class AuthController : ControllerBase
     {
         var user = await _userManager.FindByNameAsync(req.Username);
 
+        // Password is checked BEFORE the IsActive check, deliberately. If IsActive
+        // were checked first, a caller could learn which usernames are deactivated
+        // without knowing any password. Checking the password first means a wrong
+        // password always returns the same generic UNAUTHORIZED, and
+        // ACCOUNT_DISABLED is only ever shown to someone who already proved they
+        // hold the credentials.
         if (user is null || !await _userManager.CheckPasswordAsync(user, req.Password))
         {
             _logger.LogWarning("Failed login attempt for {Username}", req.Username);
-            return Unauthorized(new { success = false, error = new { code = "UNAUTHORIZED", message = "Invalid credentials" } });
+            return Unauthorized(new
+            {
+                success = false,
+                error = new { code = "UNAUTHORIZED", message = "Invalid credentials" }
+            });
         }
 
+        // Phase 14: honours Admin Console deactivation. AdminController.SetStatus
+        // must write to this SAME IsActive field for deactivation to actually take
+        // effect - see the compatibility note at the bottom of this file.
         if (!user.IsActive)
-            return Unauthorized(new { success = false, error = new { code = "UNAUTHORIZED", message = "Account is deactivated" } });
+        {
+            _logger.LogWarning("Login attempt for deactivated account {Username}", req.Username);
+            return Unauthorized(new
+            {
+                success = false,
+                error = new
+                {
+                    code = "ACCOUNT_DISABLED",
+                    message = "This account has been deactivated. Contact an administrator."
+                }
+            });
+        }
 
         var roles = await _userManager.GetRolesAsync(user);
         var (token, expiresIn) = _tokenService.GenerateJwt(user, roles);
 
-        return Ok(new { success = true, data = new LoginResponseDto(token, roles.FirstOrDefault(), expiresIn) });
+        return Ok(new
+        {
+            success = true,
+            data = new LoginResponseDto(token, roles.FirstOrDefault(), expiresIn)
+        });
     }
 }
