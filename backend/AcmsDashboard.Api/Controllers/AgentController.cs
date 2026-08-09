@@ -20,7 +20,6 @@ public class AgentController : ControllerBase
         _logger = logger;
     }
 
-    /// <summary>POST /v1/agent/query - ask a natural-language question.</summary>
     [HttpPost("query")]
     [EnableRateLimiting("agent")]
     public async Task<IActionResult> Query([FromBody] AgentQueryRequest req)
@@ -31,11 +30,6 @@ public class AgentController : ControllerBase
         {
             var answer = await _agent.AnswerAsync(req.Question, username, HttpContext.RequestAborted);
 
-            // Defence in depth for the UI change that stopped rendering the SQL.
-            // Hiding it in the component alone still ships it over the wire, where
-            // it is one DevTools tab away - so strip it here for everyone except
-            // Admin, who legitimately needs it to debug a wrong answer.
-            // AgentService still logs the full query server-side either way.
             if (!User.IsInRole("Admin"))
             {
                 answer = answer with { GeneratedSql = null };
@@ -51,9 +45,9 @@ public class AgentController : ControllerBase
                 error = new { code = "UNSAFE_QUERY", message = ex.Message }
             });
         }
-        catch (GeminiException ex)
+        catch (NlProviderException ex)
         {
-            _logger.LogWarning(ex, "Gemini failure for user {User}", username);
+            _logger.LogWarning(ex, "AI provider failure for user {User}", username);
             return StatusCode(503, new
             {
                 success = false,
@@ -62,7 +56,6 @@ public class AgentController : ControllerBase
         }
     }
 
-    /// <summary>GET /v1/agent/suggestions - chips shown on first open (Phase 13 UI).</summary>
     [HttpGet("suggestions")]
     public IActionResult Suggestions() => Ok(new
     {

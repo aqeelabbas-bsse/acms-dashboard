@@ -12,31 +12,29 @@ public class UnsafeQueryException : Exception
 
 public class AgentService
 {
-    private const int MaxRows = 50;              // caps data exposure per answer
-    private const int QueryTimeoutSeconds = 15;  // stops runaway queries
+    private const int MaxRows = 50;
+    private const int QueryTimeoutSeconds = 15;
 
-    private readonly GeminiClient _gemini;
+    private readonly INlQueryClient _llm;
     private readonly SqlSafetyValidator _validator;
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
     private readonly ILogger<AgentService> _logger;
 
     public AgentService(
-        GeminiClient gemini,
+        INlQueryClient llm,
         SqlSafetyValidator validator,
         IConfiguration config,
         IWebHostEnvironment env,
         ILogger<AgentService> logger)
     {
-        _gemini = gemini;
+        _llm = llm;
         _validator = validator;
         _config = config;
         _env = env;
         _logger = logger;
     }
 
-    // Schema description only - never actual data. Rebuilt fresh on every request
-    // so it always reflects the current schema (Technical Documentation, Sec. 8).
     private const string SchemaContext = """
         You translate plain-English questions about an access-control system into
         a single Microsoft SQL Server SELECT statement.
@@ -93,8 +91,7 @@ public class AgentService
         if (string.IsNullOrWhiteSpace(question) || question.Length > 500)
             throw new UnsafeQueryException("Please ask a question between 1 and 500 characters.");
 
-        // -- 1. Question -> SQL --
-        var rawSql = await _gemini.GenerateAsync(SchemaContext, question, temperature: 0, ct: ct);
+        var rawSql = StripCodeFences(await _llm.GenerateAsync(SchemaContext, question, temperature: 0, ct: ct));
 
         _logger.LogInformation("NL-agent | user={User} | q={Question} | raw={Sql}",
             username, question, rawSql);
@@ -115,7 +112,6 @@ public class AgentService
                 null, 0, false, Elapsed(startedAt));
         }
 
-        // -- 2. Validate (layer 2) --
         var validation = _validator.Validate(rawSql);
         if (!validation.IsValid)
         {
@@ -126,18 +122,36 @@ public class AgentService
 
         var sql = validation.CleanedSql!;
 
-        // -- 3. Execute against the SELECT-only login (layer 1) --
         var (rows, columns) = await ExecuteReadOnlyAsync(sql, ct);
 
-        // -- 4. Rows -> plain English --
         var answer = await SummariseAsync(question, columns, rows, ct);
 
         return new AgentAnswerDto(
             answer,
-            _env.IsDevelopment() ? sql : null,   // never expose SQL in production
+            _env.IsDevelopment() ? sql : null,
             rows.Count,
             rows.Count > 1 && columns.Count == 2,
             Elapsed(startedAt));
+    }
+
+    /// <summary>
+    /// Local models are less reliable than Gemini at obeying "no markdown fences" -
+    /// this strips a ```sql ... ``` wrapper if one slips through, before the query
+    /// ever reaches the safety validator. Doesn't weaken validation, just prevents
+    /// a valid query being rejected for cosmetic reasons.
+    /// </summary>
+    private static string StripCodeFences(string s)
+    {
+        s = s.Trim();
+        if (!s.StartsWith("```")) return s;
+
+        var firstNewline = s.IndexOf('\n');
+        if (firstNewline >= 0) s = s[(firstNewline + 1)..];
+
+        var lastFence = s.LastIndexOf("```", StringComparison.Ordinal);
+        if (lastFence >= 0) s = s[..lastFence];
+
+        return s.Trim();
     }
 
     private async Task<(List<Dictionary<string, object?>> Rows, List<string> Columns)>
@@ -175,8 +189,6 @@ public class AgentService
         }
         catch (SqlException ex)
         {
-            // A permission error here means layer 1 caught something layer 2 missed -
-            // exactly the defence-in-depth design working. Worth logging loudly.
             _logger.LogError(ex, "NL-agent SQL execution failed. SQL: {Sql}", sql);
             throw new UnsafeQueryException(
                 "The query could not be executed - it may reference data the agent isn't permitted to read.");
@@ -212,11 +224,10 @@ public class AgentService
 
         try
         {
-            return await _gemini.GenerateAsync(instruction, prompt, temperature: 0.2, ct: ct);
+            return await _llm.GenerateAsync(instruction, prompt, temperature: 0.2, ct: ct);
         }
-        catch (GeminiException)
+        catch (NlProviderException)
         {
-            // Summarisation is a nicety - if it fails, still give the user their answer.
             if (rows.Count == 1 && columns.Count == 1)
             {
                 var value = rows[0][columns[0]];

@@ -127,9 +127,8 @@ builder.Services.AddQuartz(q =>
 
 builder.Services.AddQuartzHostedService(opt => opt.WaitForJobsToComplete = true);
 
-// ---- NL Query Agent (Phase 7) ----
+// ==================== NL Query Agent: Gemini primary, Ollama silent fallback ====================
 builder.Services.AddSingleton<SqlSafetyValidator>();
-builder.Services.AddScoped<AgentService>();
 
 builder.Services.AddHttpClient<GeminiClient>(client =>
 {
@@ -137,12 +136,25 @@ builder.Services.AddHttpClient<GeminiClient>(client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 
+builder.Services.AddHttpClient<OllamaClient>(client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Ollama:BaseUrl"] ?? "http://localhost:11434/");
+    client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue<int?>("Ollama:TimeoutSeconds") ?? 60);
+});
+
+// Gemini is always tried first; Ollama only runs when Gemini throws
+// (quota exhausted, auth error, timeout, etc). Nothing is exposed to the
+// caller about which one actually answered.
+builder.Services.AddScoped<INlQueryClient, FailoverNlQueryClient>();
+
+builder.Services.AddScoped<AgentService>();
+// ===================================================================================================
+
 // ---- Rate limiting (Phase 7) ----
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-    // 20/min per user on the agent - keeps us inside the Gemini free tier.
     options.AddPolicy("agent", context => RateLimitPartition.GetFixedWindowLimiter(
         partitionKey: context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anon",
         factory: _ => new FixedWindowRateLimiterOptions
@@ -152,7 +164,6 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0
         }));
 
-    // 120/min everywhere else, per the API Specification.
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: context.User.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anon",
@@ -233,7 +244,7 @@ app.UseHttpsRedirection();
 app.UseCors("AngularDev");
 app.UseAuthentication();
 app.UseAuthorization();
-app.UseRateLimiter();   // AFTER auth - the limiter partitions by username
+app.UseRateLimiter();
 
 app.MapControllers();
 app.MapHub<AuditHub>("/hubs/audit");
