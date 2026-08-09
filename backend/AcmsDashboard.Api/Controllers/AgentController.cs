@@ -30,6 +30,17 @@ public class AgentController : ControllerBase
         try
         {
             var answer = await _agent.AnswerAsync(req.Question, username, HttpContext.RequestAborted);
+
+            // Defence in depth for the UI change that stopped rendering the SQL.
+            // Hiding it in the component alone still ships it over the wire, where
+            // it is one DevTools tab away - so strip it here for everyone except
+            // Admin, who legitimately needs it to debug a wrong answer.
+            // AgentService still logs the full query server-side either way.
+            if (!User.IsInRole("Admin"))
+            {
+                answer = answer with { GeneratedSql = null };
+            }
+
             return Ok(new { success = true, data = answer });
         }
         catch (UnsafeQueryException ex)

@@ -177,7 +177,16 @@ export class KpiCardComponent {
   constructor() {
     effect(() => {
       const v = this.value();
-      if (v === null || this.loading()) return;
+      if (this.loading()) return;
+
+      // Last line of defence against a bad upstream value. A non-finite number
+      // (NaN / Infinity) would otherwise flow straight into the count-up maths
+      // and render the literal text "NaN" on the tile. Show a neutral dash
+      // instead, which reads as "no data" rather than as a broken component.
+      if (v === null || v === undefined || !Number.isFinite(v)) {
+        this.display.set('-');
+        return;
+      }
       this.animateTo(v);
     });
   }

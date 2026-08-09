@@ -15,13 +15,16 @@ import { ChartComponent } from '../../shared/ui/chart/chart.component';
 import { AuditFeedComponent } from '../../shared/ui/audit-feed/audit-feed.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { SegmentedComponent, SegmentOption } from '../../shared/ui/segmented/segmented.component';
+import { DrilldownModalComponent } from '../../shared/ui/drilldown/drilldown-modal.component';
+import { DrilldownService } from '../../core/services/drilldown.service';
+import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.models';
 
 @Component({
   selector: 'acms-dashboard',
   standalone: true,
   imports: [
     GlassCardComponent, KpiCardComponent, ChartComponent, AuditFeedComponent,
-    IconComponent, SegmentedComponent,
+    IconComponent, SegmentedComponent, DrilldownModalComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -63,19 +66,19 @@ import { SegmentedComponent, SegmentOption } from '../../shared/ui/segmented/seg
 
       <!-- KPI row -->
       <section class="kpis stagger">
-        <acms-kpi-card label="Total employees" tone="violet" icon="users"
+        <acms-kpi-card label="Total Employees" tone="violet" icon="users"
           [value]="kpi()?.totalEmployees ?? null" [loading]="loading()"
           [spark]="submittedSeries()" note="Registered smart-card profiles" />
 
-        <acms-kpi-card label="Active cards" tone="cyan" icon="card"
+        <acms-kpi-card label="Active Visitor Cards" tone="cyan" icon="card"
           [value]="kpi()?.activeCards ?? null" [loading]="loading()"
           [spark]="printedSeries()" note="Cards issued and active" />
 
-        <acms-kpi-card label="On site now" tone="blue" icon="pin"
+        <acms-kpi-card label="Visitors On Site Now" tone="blue" icon="pin"
           [value]="liveOccupancy()" [loading]="loading()"
           [note]="occupancyNote()" />
 
-        <acms-kpi-card label="Pending requests" tone="rose" icon="clock"
+        <acms-kpi-card label="Pending Staff Requests" tone="rose" icon="clock"
           [value]="kpi()?.pendingRequests ?? null" [loading]="loading()"
           note="Awaiting verification or printing" />
       </section>
@@ -103,6 +106,20 @@ import { SegmentedComponent, SegmentOption } from '../../shared/ui/segmented/seg
           <acms-audit-feed />
         </acms-glass-card>
       </section>
+
+      <!-- Access control breakdown - Reqs 1, 2, 4, 5, 6: click any tile to
+           drill from a KPI into a category histogram into a searchable grid. -->
+      <section class="drill-tiles stagger">
+        @for (t of drilldownTiles(); track t.kind) {
+          <button type="button" class="dtile" [attr.data-tone]="t.tone" (click)="openDrilldown(t.kind)">
+            <span class="dtile__ic"><acms-icon [name]="t.icon" [size]="17" [weight]="2" /></span>
+            <span class="dtile__n">{{ t.value === null ? '\u2014' : t.value }}</span>
+            <span class="dtile__l">{{ t.title }}</span>
+          </button>
+        }
+      </section>
+
+      <acms-drilldown-modal [kind]="openKind()" (closed)="openKind.set(null)" />
 
       <!-- Secondary analytics row -->
       <section class="grid3 stagger">
@@ -186,6 +203,69 @@ import { SegmentedComponent, SegmentOption } from '../../shared/ui/segmented/seg
     }
     .alert acms-icon { color: var(--danger-fg); flex-shrink: 0; }
 
+    .drill-tiles {
+      display: grid; grid-template-columns: repeat(5, 1fr);
+      gap: var(--s-4); margin: 0 0 var(--s-6);
+    }
+.dtile {
+      position: relative;
+      overflow: hidden;
+      display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+      padding: var(--s-4) var(--s-5); border-radius: var(--r-lg);
+      border: 1px solid rgba(255, 255, 255, .14);
+      box-shadow: var(--sh-card), inset 0 1px 0 rgba(255,255,255,.18);
+      cursor: pointer; text-align: left; font: inherit; color: #fff;
+      transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
+    }
+    .dtile:hover { transform: translateY(-3px); box-shadow: var(--sh-float), inset 0 1px 0 rgba(255,255,255,.18); }
+
+    /* Same formula as the big KPI cards: deep, contrast-checked stop where
+       the text sits (all ≥5:1 with white), vivid stop only in the far
+       corner where no text lives. */
+    .dtile[data-tone='teal']   { background: linear-gradient(115deg, #155E63 0%, #0E7490 55%, #22D3EE 100%); }
+    .dtile[data-tone='rose']   { background: linear-gradient(115deg, #9F1239 0%, #E11D48 55%, #FB7185 100%); }
+    .dtile[data-tone='amber']  { background: linear-gradient(115deg, #92400E 0%, #D97706 55%, #FBBF24 100%); }
+    .dtile[data-tone='blue']   { background: linear-gradient(115deg, #1E3A8A 0%, #2563EB 55%, #60A5FA 100%); }
+    .dtile[data-tone='violet'] { background: linear-gradient(115deg, #4C3BC4 0%, #6D5AE8 55%, #8B5CF6 100%); }
+
+    /* Soft glow in the vivid corner - the same "lit corner" treatment the
+       big cards use, just smaller. */
+    .dtile::after {
+      content: '';
+      position: absolute; top: -30%; right: -18%;
+      width: 70%; aspect-ratio: 1; border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,.32) 0%, transparent 70%);
+      pointer-events: none;
+      transition: opacity var(--t-slow) var(--ease);
+    }
+    .dtile:hover::after { opacity: 1.15; }
+
+    /* Icon stays neutral white/translucent on every tone - it sits on a
+       coloured card now, so it doesn't need its own colour too. */
+    .dtile__ic {
+      position: relative; z-index: 1;
+      display: grid; place-items: center; width: 30px; height: 30px;
+      border-radius: 9px;
+      background: rgba(255, 255, 255, .18);
+      border: 1px solid rgba(255, 255, 255, .22);
+      color: #fff;
+      transition: transform var(--t-fast) var(--ease-spring);
+    }
+    .dtile:hover .dtile__ic { transform: scale(1.08) rotate(-4deg); }
+
+    .dtile__n {
+      position: relative; z-index: 1;
+      font-family: var(--font-display); font-size: var(--fs-lg); font-weight: 700;
+      color: #fff;
+      text-shadow: 0 1px 8px rgba(0,0,0,.25);
+    }
+    .dtile__l {
+      position: relative; z-index: 1;
+      font-size: var(--fs-xs); color: rgba(255, 255, 255, .82);
+    }
+    @media (max-width: 900px) { .drill-tiles { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 480px) { .drill-tiles { grid-template-columns: 1fr; } }
+
     .kpis  { display: grid; grid-template-columns: repeat(4, 1fr);
              gap: var(--s-5); margin-bottom: var(--s-5); }
     .grid  { display: grid; grid-template-columns: 1.55fr 1fr;
@@ -227,9 +307,42 @@ import { SegmentedComponent, SegmentOption } from '../../shared/ui/segmented/seg
 })
 export class DashboardComponent implements OnInit {
   private readonly analytics = inject(AnalyticsService);
+  private readonly drilldownSvc = inject(DrilldownService);
   private readonly ct = inject(ChartThemeService);
   private readonly exporter = inject(ExportService);
   protected readonly hub = inject(SignalrService);
+
+  /* ---------- Drill-down tiles (Reqs 1, 2, 4, 5, 6) ---------- */
+
+  protected readonly openKind = signal<DrilldownKind | null>(null);
+
+  private readonly drilldownTotals = signal<Partial<Record<DrilldownKind, number>>>({});
+
+protected readonly drilldownTiles = computed(() => {
+    const totals = this.drilldownTotals();
+    return (Object.keys(DRILLDOWN_META) as DrilldownKind[]).map((kind) => ({
+      kind,
+      icon: DRILLDOWN_META[kind].icon,
+      title: DRILLDOWN_META[kind].title,
+      tone: DRILLDOWN_META[kind].tone,
+      value: totals[kind] ?? null,
+    }));
+  });
+
+  protected openDrilldown(kind: DrilldownKind): void {
+    this.openKind.set(kind);
+  }
+
+  /** Fires each tile's summary independently so one slow/failing kind never
+   *  blocks the other four from showing their counts. */
+  private loadDrilldownTotals(): void {
+    (Object.keys(DRILLDOWN_META) as DrilldownKind[]).forEach((kind) => {
+      this.drilldownSvc.summary(kind).subscribe({
+        next: (s) => this.drilldownTotals.update((t) => ({ ...t, [kind]: s.total })),
+        error: () => { /* tile just shows an em-dash; the modal will surface the real error if opened */ },
+      });
+    });
+  }
 
   private readonly printArea = viewChild<ElementRef<HTMLElement>>('printArea');
 
@@ -424,6 +537,7 @@ export class DashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.hub.connect();
+    this.loadDrilldownTotals();
   }
 
   protected load(): void { this.fetch(+this.range()); }

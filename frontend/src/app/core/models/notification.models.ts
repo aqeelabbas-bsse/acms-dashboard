@@ -42,7 +42,10 @@ export interface EventRule {
 
 export const EVENT_RULES: Record<string, EventRule> = {
   // --- Card request workflow (Phase 5) ---
-  CardRequested: {
+  // Key corrected to match the real broadcast type - it was 'CardRequested',
+  // which the backend never sends, so every submission notification was
+  // silently falling through to FALLBACK_RULE.
+  CardRequestSubmitted: {
     label: (s) => `Card request submitted for ${s}`,
     tone: 'info', icon: 'card', route: '/card-requests',
   },
@@ -65,10 +68,20 @@ export const EVENT_RULES: Record<string, EventRule> = {
     tone: 'muted', icon: 'users', route: '/visitors',
   },
 
-  // --- RFID (Phase 5) ---
+  // --- RFID: visitor passes (Phase 5) ---
   CardBlocked: {
-    label: (s) => `RFID card ${s} blocked`,
-    tone: 'danger', icon: 'shield', route: '/rfid',
+    label: (s) => `Visitor RFID card ${s} blocked`,
+    tone: 'danger', icon: 'shield', route: '/visitor-rfid',
+  },
+
+  // --- RFID: staff cards (this week's PersonalRFID addition) ---
+  PersonalCardBlocked: {
+    label: (s) => `Staff card blocked for ${s}`,
+    tone: 'danger', icon: 'shield', route: '/personal-rfid',
+  },
+  PersonalCardReactivated: {
+    label: (s) => `Staff card reactivated for ${s}`,
+    tone: 'ok', icon: 'userCheck', route: '/personal-rfid',
   },
 
   // --- Account administration (Phase 14) ---
@@ -110,7 +123,8 @@ export const ROLE_INTEREST: Record<string, string[] | '*'> = {
 
   // Security verifies requests and cares about blocked cards and who is on site.
   Security: [
-    'CardRequested', 'CardVerified', 'CardBlocked',
+    'CardRequestSubmitted', 'CardVerified', 'CardBlocked',
+    'PersonalCardBlocked', 'PersonalCardReactivated',
     'VisitorCheckedIn', 'VisitorCheckedOut',
   ],
 

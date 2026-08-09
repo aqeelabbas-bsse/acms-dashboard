@@ -1,5 +1,6 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { ApiService } from './api.service';
+import { AuthService } from './auth.service';
 import {
   AgentAnswer, ChatMessage, SuggestionChip,
 } from '../models/agent.models';
@@ -18,6 +19,28 @@ const FALLBACK_CHIPS: SuggestionChip[] = [
 @Injectable({ providedIn: 'root' })
 export class AgentService {
   private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
+
+  constructor() {
+    // The assistant is a singleton that outlives any one session, so without
+    // this the next person to sign in on the same browser inherits the previous
+    // role's thread. Card-request and visitor answers are role-scoped data;
+    // leaking an Admin's conversation into a Viewer session is a real
+    // confidentiality problem, not just a cosmetic one.
+    //
+    // Keyed on role rather than username so a role switch always starts clean,
+    // and wiped entirely (not merely hidden) so nothing is recoverable.
+    effect(() => {
+      const role = this.auth.role();
+      if (role !== this.activeRole) {
+        this.activeRole = role;
+        this.resetConversation();
+      }
+    });
+  }
+
+  /** Role the current in-memory thread belongs to. `undefined` until first run. */
+  private activeRole: string | null | undefined = undefined;
 
   /* ---------- Panel visibility (shared by the orb, sidebar CTA, topbar) ---------- */
 
@@ -80,6 +103,14 @@ export class AgentService {
     this._messages.set([]);
   }
 
+  /** Wipes the thread and any in-flight state. Used on role change / sign-out. */
+  private resetConversation(): void {
+    this._messages.set([]);
+    this._busy.set(false);
+    this._open.set(false);
+    this.seq = 0;
+  }
+
   ask(question: string): void {
     const q = question.trim();
     if (!q || this._busy()) return;
@@ -97,10 +128,13 @@ export class AgentService {
 
     this.api.post<AgentAnswer>('/agent/query', { question: q }).subscribe({
       next: res => {
+        // res.generatedSql is deliberately NOT stored. Showing raw T-SQL to a
+        // Security or Printer user is noise at best and an schema disclosure at
+        // worst - the answer is the product, the query is an implementation
+        // detail. The backend still logs it server-side for auditability.
         this.resolve(placeholderId, {
           text: res.answer,
           status: 'done',
-          sql: res.generatedSql,
           rowCount: res.rowCount,
           elapsedMs: res.elapsedMs,
           rows: res.rows,

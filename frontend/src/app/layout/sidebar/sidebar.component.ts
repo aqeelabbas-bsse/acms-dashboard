@@ -148,11 +148,17 @@ export class SidebarComponent {
     { title: 'Overview', items: [
       { label: 'Dashboard', path: '/dashboard', icon: 'grid' },
     ]},
-    { title: 'Access control', items: [
+    // Split into two groups so the personal and visitor card populations are
+    // never presented as one pool. They are separate tables, separate
+    // lifecycles, and separate day-to-day jobs - the sidebar should say so.
+    { title: 'Personnel', items: [
       { label: 'Employees',     path: '/employees',     icon: 'users' },
       { label: 'Card requests', path: '/card-requests', icon: 'card' },
-      { label: 'Visitors',      path: '/visitors',      icon: 'userCheck' },
-      { label: 'RFID cards',    path: '/rfid',          icon: 'rfid' },
+      { label: 'Personal RFID', path: '/personal-rfid', icon: 'rfid' },
+    ]},
+    { title: 'Visitors', items: [
+      { label: 'Visitor log',   path: '/visitors',      icon: 'userCheck' },
+      { label: 'Visitor RFID',  path: '/visitor-rfid',  icon: 'rfid' },
     ]},
     { title: 'System', items: [
       { label: 'Admin', path: '/admin', icon: 'shield', roles: ['Admin'] },

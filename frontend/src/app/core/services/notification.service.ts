@@ -25,14 +25,37 @@ export class NotificationService {
   /** Dedupe guard. SignalR can redeliver on reconnect. */
   private readonly seen = new Set<string>();
 
+  /** Identity the in-memory list currently belongs to. `undefined` until first run. */
+  private activeUser: string | null | undefined = undefined;
+
   constructor() {
-    this.restore();
+    // NotificationService is a root singleton, so without this it survives
+    // sign-out. Storage was already keyed per user (correct), but the
+    // in-memory `_items` signal was only ever loaded once at app boot -
+    // switching accounts in the same tab kept showing the PREVIOUS user's
+    // already-rendered notifications until a full page reload. Watching
+    // username and reloading from that user's own key on change closes that
+    // gap the same way AgentService's per-role chat reset does.
+    effect(() => {
+      const user = this.currentUsername();
+      if (user !== this.activeUser) {
+        this.activeUser = user;
+        this.switchIdentity();
+      }
+    });
 
     effect(() => {
       const raw = this.signalr.events();
       if (!Array.isArray(raw) || raw.length === 0) return;
       this.ingestFrom(raw);
     });
+  }
+
+  /** Swaps the in-memory list to whatever is stored under the new user's key. */
+  private switchIdentity(): void {
+    this._items.set([]);
+    this.seen.clear();
+    this.restore();
   }
 
   // --- Ingestion ------------------------------------------------------------
@@ -86,10 +109,18 @@ export class NotificationService {
 
     const rule = EVENT_RULES[type] ?? FALLBACK_RULE;
 
+    // The backend composes a complete, correct sentence server-side
+    // (e.g. "Bilal Ahmed checked out") and sends it as `description` - use it
+    // directly rather than reassembling one from a subject the payload may
+    // not even carry. rule.label() stays as a fallback for the rare case a
+    // description is genuinely missing, so nothing ever silently blanks out.
+    const description = String(ev?.['description'] ?? ev?.['Description'] ?? '').trim();
+    const title = description || rule.label(subject || 'a record');
+
     return {
       id: `${type}|${subject}|${at}`,
       type,
-      title: rule.label(subject || 'a record'),
+      title,
       detail,
       at,
       tone: rule.tone,

@@ -42,9 +42,25 @@ export const routes: Routes = [
           import('./pages/visitors/visitors.component').then(m => m.VisitorsComponent),
       },
       {
-        path: 'rfid',
+        // Staff cards (dbo.PersonalRFID) - distinct population from visitor
+        // passes, so it gets its own route rather than a filter on /visitor-rfid.
+        path: 'personal-rfid',
+        loadComponent: () =>
+          import('./pages/personal-rfid/personal-rfid.component')
+            .then(m => m.PersonalRfidComponent),
+      },
+      {
+        // Visitor passes (dbo.VisitorsRFID). Renamed from the ambiguous '/rfid'.
+        path: 'visitor-rfid',
         loadComponent: () =>
           import('./pages/rfid/rfid.component').then(m => m.RfidComponent),
+      },
+      {
+        // Anyone with the old URL bookmarked lands on the visitor screen, which
+        // is what '/rfid' always actually showed.
+        path: 'rfid',
+        redirectTo: 'visitor-rfid',
+        pathMatch: 'full',
       },
       {
         // Phase 14: real Admin Console (user management + sign-off view),

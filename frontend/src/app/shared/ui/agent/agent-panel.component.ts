@@ -118,19 +118,8 @@ const STAGES = [
                             <button type="button" class="tag tag--btn" (click)="copy(m.text)">
                               <acms-icon name="card" [size]="11" /> Copy
                             </button>
-                            @if (m.sql) {
-                              <button type="button" class="tag tag--btn"
-                                      (click)="toggleSql(m.id)"
-                                      [attr.aria-expanded]="openSql() === m.id">
-                                <acms-icon name="chevron" [size]="11" [weight]="2.4" />
-                                {{ openSql() === m.id ? 'Hide query' : 'How I got this' }}
-                              </button>
-                            }
                           </div>
 
-                          @if (openSql() === m.id && m.sql) {
-                            <pre class="sql"><code>{{ m.sql }}</code></pre>
-                          }
                         }
                       }
                     </div>
@@ -329,18 +318,6 @@ const STAGES = [
     .tag--btn { cursor: pointer; transition: all var(--t-fast) var(--ease); }
     .tag--btn:hover { background: var(--violet-bg); color: var(--violet-fg); }
 
-    .sql {
-      margin: 0; padding: 12px 14px;
-      border-radius: var(--r-sm);
-      background: var(--surface-solid, var(--hover-wash));
-      border: 1px solid var(--glass-border);
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 11.5px; line-height: 1.6; color: var(--ink-soft);
-      white-space: pre-wrap; word-break: break-word;
-      overflow-x: auto;
-      animation: rise var(--t-fast) var(--ease) both;
-    }
-
     /* ---- Chips: full text, never clipped ---- */
     .chips { display: flex; flex-wrap: wrap; gap: 7px; padding-bottom: var(--s-4); }
     .chips--grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
@@ -413,7 +390,7 @@ const STAGES = [
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .panel, .msg, .sql, .orb__ring, .dots i { animation: none; }
+      .panel, .msg, .orb__ring, .dots i { animation: none; }
     }
   `],
 })
@@ -425,7 +402,6 @@ export class AgentPanelComponent implements OnInit, AfterViewChecked, OnDestroy 
 
   protected draft = '';
   protected readonly focused = signal(false);
-  protected readonly openSql = signal<string | null>(null);
   protected readonly fullscreen = signal(false);
 
   private readonly stageIx = signal(0);
@@ -506,10 +482,6 @@ export class AgentPanelComponent implements OnInit, AfterViewChecked, OnDestroy 
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 132)}px`;
-  }
-
-  protected toggleSql(id: string): void {
-    this.openSql.update(cur => (cur === id ? null : id));
   }
 
   protected copy(text: string): void {

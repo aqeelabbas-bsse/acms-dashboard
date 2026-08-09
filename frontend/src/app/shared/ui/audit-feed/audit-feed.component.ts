@@ -12,18 +12,31 @@ interface FeedRow {
   icon: IconName;
   tone: Tone;
   text: string;
-  subject: string;
   at: string;
 }
 
-/** Maps backend event types to how they should read in the feed. */
-const MAP: Record<string, { icon: IconName; tone: Tone; text: string }> = {
-  CardSubmitted:  { icon: 'card',      tone: 'violet',  text: 'Card request submitted' },
-  CardVerified:   { icon: 'check',     tone: 'success', text: 'Card request verified' },
-  CardPrinted:    { icon: 'printer',   tone: 'info',    text: 'Card printed' },
-  VisitorCheckIn: { icon: 'userCheck', tone: 'info',    text: 'Visitor checked in' },
-  VisitorCheckOut:{ icon: 'logout',    tone: 'warn',    text: 'Visitor checked out' },
-  CardBlocked:    { icon: 'ban',       tone: 'danger',  text: 'RFID card blocked' },
+/**
+ * Icon/tone per event type. Keys MUST match the string literals the backend
+ * controllers actually pass to IAuditBroadcaster.BroadcastAsync(...) - they
+ * previously didn't (CardSubmitted vs the real CardRequestSubmitted,
+ * VisitorCheckIn/Out vs the real VisitorCheckedIn/Out), which silently sent
+ * every card-submitted and visitor event through the generic fallback and
+ * printed the raw type string instead of readable text.
+ *
+ * No `text` field here anymore - the backend's `description` is already a
+ * complete, correct sentence per event, so the feed displays that directly
+ * rather than reconstructing a sentence from a second, independently
+ * maintained copy of the same information.
+ */
+const MAP: Record<string, { icon: IconName; tone: Tone }> = {
+  CardRequestSubmitted:    { icon: 'card',      tone: 'violet' },
+  CardVerified:            { icon: 'check',     tone: 'success' },
+  CardPrinted:             { icon: 'printer',   tone: 'info' },
+  VisitorCheckedIn:        { icon: 'userCheck', tone: 'info' },
+  VisitorCheckedOut:       { icon: 'logout',    tone: 'warn' },
+  CardBlocked:             { icon: 'ban',       tone: 'danger' },
+  PersonalCardBlocked:     { icon: 'ban',       tone: 'danger' },
+  PersonalCardReactivated: { icon: 'check',     tone: 'success' },
 };
 
 @Component({
@@ -46,7 +59,7 @@ const MAP: Record<string, { icon: IconName; tone: Tone; text: string }> = {
               <acms-icon [name]="r.icon" [size]="14" [weight]="2.2" />
             </span>
             <div class="body">
-              <div class="txt">{{ r.text }} <b>{{ r.subject }}</b></div>
+              <div class="txt">{{ r.text }}</div>
               <div class="time">{{ ago(r.at) }}</div>
             </div>
           </div>
@@ -124,14 +137,12 @@ export class AuditFeedComponent implements OnInit {
   }
 
   private toRow(e: AuditEvent, i: number): FeedRow {
-    const m = MAP[e.type] ?? { icon: 'activity' as IconName, tone: 'info' as Tone, text: e.type };
-    const subject =
-      e.name ??
-      (e.cardRequestId !== undefined ? `#${e.cardRequestId}` : undefined) ??
-      e.card ??
-      e.cnic ?? '';
-    return { key: `${e.at}-${e.type}-${i}`, icon: m.icon, tone: m.tone,
-             text: m.text, subject, at: e.at };
+    const m = MAP[e.type] ?? { icon: 'activity' as IconName, tone: 'info' as Tone };
+    // Fallback only fires for a genuinely unmapped type, which should now be
+    // rare - and even then description (composed server-side) is still shown
+    // rather than the bare machine type string.
+    const text = e.description || e.type;
+    return { key: `${e.at}-${e.type}-${i}`, icon: m.icon, tone: m.tone, text, at: e.at };
   }
 
   protected ago(iso: string): string {

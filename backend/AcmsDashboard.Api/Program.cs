@@ -102,6 +102,8 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+builder.Services.AddScoped<DrilldownQueryService>();
+
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<TokenService>();
 

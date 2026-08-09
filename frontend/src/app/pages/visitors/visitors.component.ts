@@ -214,10 +214,14 @@ export class VisitorsComponent {
 
   protected time(v: string | null): string {
     if (!v) return '';
-    const d = new Date(v);
+    const d = new Date(this.asUtc(v));
     return isNaN(d.getTime()) ? '' : d.toLocaleString(undefined,
       { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  }
+}
+
+private asUtc(v: string): string {
+    return /[Zz]|[+-]\d{2}:\d{2}$/.test(v) ? v : `${v}Z`;
+}
 
   protected bad(control: string): boolean {
     const c = this.form.get(control);

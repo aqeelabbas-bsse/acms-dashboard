@@ -143,11 +143,12 @@ public class VisitorsController : ControllerBase
 
         await _db.SaveChangesAsync();
 
+        var companySuffix = string.IsNullOrWhiteSpace(visitor.CompanyName) ? "" : $" ({visitor.CompanyName})";
         await _audit.BroadcastAsync(
-            "VisitorCheckedIn",
-            $"{visitor.Name} ({visitor.CompanyName}) checked in",
-            User.Identity?.Name,
-            new { id = visitor.Id, cnic = visitor.Cnic, card = visitor.CardSerialNumber });
+        "VisitorCheckedIn",
+        $"{visitor.Name}{companySuffix} checked in",
+        User.Identity?.Name,
+        new { id = visitor.Id, cnic = visitor.Cnic, card = visitor.CardSerialNumber });
 
         await _audit.BroadcastOccupancyAsync();   // FR-RT-02: live occupancy counter
 
