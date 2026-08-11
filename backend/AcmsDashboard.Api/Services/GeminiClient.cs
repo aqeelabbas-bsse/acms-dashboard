@@ -35,7 +35,7 @@ public class GeminiClient : INlQueryClient
             generationConfig = new
             {
                 temperature,
-                maxOutputTokens = 1024
+                maxOutputTokens = 2048
             }
         };
 

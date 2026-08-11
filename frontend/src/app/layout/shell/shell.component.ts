@@ -17,7 +17,7 @@ import { AgentService } from '../../core/services/agent.service';
     AgentPanelComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-  <a class="skip" href="#main">Skip to main content</a>
+    <a class="skip" href="#main">Skip to main content</a>
     <acms-aurora-background />
 
     <div class="shell">
@@ -35,8 +35,16 @@ import { AgentService } from '../../core/services/agent.service';
       </div>
     </div>
 
-    <button class="orb" type="button" (click)="onAskAgent()" aria-label="Ask ACMS">
+    <!-- Sole entry point to the assistant now that the duplicate sidebar card
+         is gone, so it carries the explanatory label the card used to. The
+         tooltip is CSS-only: no library, and it never blocks pointer events. -->
+    <button class="orb" type="button" (click)="onAskAgent()"
+            aria-label="Ask ACMS - query access data in plain English">
       <acms-icon name="sparkle" [size]="22" [weight]="2" />
+      <span class="tip" aria-hidden="true">
+        <strong>Ask ACMS</strong>
+        Query access data in plain English &mdash; no SQL needed.
+      </span>
     </button>
 
     <acms-agent-panel />
@@ -66,6 +74,7 @@ import { AgentService } from '../../core/services/agent.service';
       transition: transform var(--t-base) var(--ease);
     }
     .orb:hover { transform: scale(1.06); }
+    .orb:focus-visible { outline: none; box-shadow: var(--sh-brand), 0 0 0 4px rgba(124,108,240,.45); }
     .orb::before {
       content: ''; position: absolute; inset: -8px;
       border-radius: 50%; border: 1.5px solid rgba(124,108,240,.4);
@@ -75,10 +84,39 @@ import { AgentService } from '../../core/services/agent.service';
       0%   { transform: scale(.85); opacity: .8; }
       100% { transform: scale(1.35); opacity: 0; }
     }
-    @media (prefers-reduced-motion: reduce) { .orb::before { animation: none; } }
 
+    .tip {
+      position: absolute; right: calc(100% + 14px); bottom: 4px;
+      width: 218px; padding: 11px 13px;
+      display: flex; flex-direction: column; gap: 3px;
+      border-radius: var(--r-md);
+      /* Opaque on purpose. A backdrop-filter here would be nested inside the
+         page's own blurred chrome and silently do nothing. */
+      background: #1B1F3A; color: #fff;
+      border: 1px solid rgba(255,255,255,.14);
+      box-shadow: var(--sh-float);
+      font-size: var(--fs-xs); line-height: 1.5; text-align: left;
+      opacity: 0; transform: translateX(6px);
+      pointer-events: none;
+      transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+    }
+    .tip strong { font-family: var(--font-display); font-size: var(--fs-sm); font-weight: 600; }
+    :host-context([data-theme='light']) .tip {
+      background: #FFFFFF; color: var(--ink);
+      border-color: var(--glass-border);
+    }
+    .orb:hover .tip, .orb:focus-visible .tip { opacity: 1; transform: translateX(0); }
+
+    @media (prefers-reduced-motion: reduce) {
+      .orb::before { animation: none; }
+      .orb, .tip { transition: none; }
+    }
     @media (max-width: 1024px) { .shell { padding: 14px; } }
-    @media (max-width: 640px)  { .shell { padding: 10px; } .orb { bottom: 18px; right: 18px; } }
+    @media (max-width: 640px) {
+      .shell { padding: 10px; }
+      .orb { bottom: 18px; right: 18px; }
+      .tip { display: none; }
+    }
   `],
 })
 export class ShellComponent {

@@ -1,4 +1,7 @@
-import { ChangeDetectionStrategy, Component, computed, effect, input, signal } from '@angular/core';
+import {
+  ChangeDetectionStrategy, Component, computed, effect, input, output, signal,
+} from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { IconComponent } from '../icon/icon.component';
 import { IconName } from '../icon/icons';
 import { SparklineComponent } from '../sparkline/sparkline.component';
@@ -13,17 +16,41 @@ const SPARK_HEX: Record<KpiTone, string> = {
   rose:   '#FDA4AF',
 };
 
+/**
+ * ── On the removed sparkline ─────────────────────────────────────────────
+ * These cards used to carry a small line chart. On "Total Employees" it was
+ * plotting daily card SUBMISSIONS, and on "Active Visitor Cards" it was
+ * plotting daily cards PRINTED — neither series is a history of the number
+ * printed above it, so the line implied a trend that did not exist.
+ *
+ * The `spark` input is kept rather than deleted, but the dashboard no longer
+ * feeds it: there is no daily history of headcount or of active pass count in
+ * the ETL tables, so no correct series exists to draw yet. If one is added
+ * later (a DailyHeadcount summary table), pass it here and the card will show
+ * it. Until then the card shows nothing rather than something wrong.
+ */
 @Component({
   selector: 'acms-kpi-card',
   standalone: true,
-  imports: [IconComponent, SparklineComponent],
+  imports: [IconComponent, SparklineComponent, NgTemplateOutlet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="kpi" [attr.data-tone]="tone()">
-      <!-- Soft radial glow in the vivid corner - no ring/dot art. The
-           gradient itself is the visual; this just adds a lit, raised feel. -->
-      <span class="glow"></span>
+    @if (clickable()) {
+      <button type="button" class="kpi kpi--btn" [attr.data-tone]="tone()"
+              (click)="drill.emit()"
+              [attr.aria-label]="'Open breakdown for ' + label()">
+        <ng-container *ngTemplateOutlet="body" />
+      </button>
+    } @else {
+      <div class="kpi" [attr.data-tone]="tone()">
+        <ng-container *ngTemplateOutlet="body" />
+      </div>
+    }
 
+    <ng-template #body>
+      <!-- Soft radial glow in the vivid corner. The gradient itself is the
+           visual; this just adds a lit, raised feel. -->
+      <span class="glow"></span>
       <span class="sheen"></span>
 
       <div class="top">
@@ -50,13 +77,22 @@ const SPARK_HEX: Record<KpiTone, string> = {
       @if (spark().length > 1 && !loading()) {
         <div class="spark"><acms-sparkline [points]="spark()" [colour]="sparkHex()" /></div>
       }
-    </div>
+
+      @if (clickable()) {
+        <span class="cue">
+          View breakdown
+          <acms-icon name="arrowRight" [size]="12" [weight]="2.4" />
+        </span>
+      }
+    </ng-template>
   `,
   styles: [`
-    :host { display: block; }
+    :host { display: block; height: 100%; }
 
     .kpi {
       position: relative;
+      display: block;
+      width: 100%;
       height: 100%;
       overflow: hidden;
       padding: var(--s-5);
@@ -68,6 +104,19 @@ const SPARK_HEX: Record<KpiTone, string> = {
       /* Every colour below is fixed, not token-driven: these cards keep the
          same vivid identity in light and dark mode by design. */
       color: #fff;
+    }
+    /* Rendered as a real <button> when drillable, so keyboard and screen-reader
+       users get the interaction for free rather than via a div with a
+       click handler bolted on. */
+    .kpi--btn {
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+      padding-bottom: calc(var(--s-5) + 18px);
+    }
+    .kpi--btn:focus-visible {
+      outline: none;
+      box-shadow: var(--sh-lift), 0 0 0 3px rgba(255,255,255,.85);
     }
     .kpi:hover { transform: translateY(-4px); box-shadow: var(--sh-lift); }
 
@@ -94,7 +143,7 @@ const SPARK_HEX: Record<KpiTone, string> = {
         transparent 34%, rgba(255,255,255,.13) 47%,
         rgba(255,255,255,.05) 55%, transparent 64%);
       transform: translateX(-125%);
-      transition: transform 760ms var(--ease);
+      transition: transform 800ms var(--ease);
     }
     .kpi:hover .sheen { transform: translateX(125%); }
 
@@ -153,8 +202,22 @@ const SPARK_HEX: Record<KpiTone, string> = {
     }
     .spark { position: relative; z-index: 2; margin-top: var(--s-3); }
 
+    /* Sits flush to the bottom edge and only fully resolves on hover/focus, so
+       the affordance is discoverable without competing with the number. */
+    .cue {
+      position: absolute; left: var(--s-5); bottom: 14px; z-index: 2;
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: var(--fs-xs); font-weight: 600;
+      color: rgba(255, 255, 255, .78);
+      opacity: .62;
+      transform: translateX(0);
+      transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+    }
+    .kpi--btn:hover .cue,
+    .kpi--btn:focus-visible .cue { opacity: 1; transform: translateX(2px); }
+
     @media (prefers-reduced-motion: reduce) {
-      .kpi, .art, .sheen, .ic { transition: none; }
+      .kpi, .glow, .sheen, .ic, .cue { transition: none; }
       .sk { animation: none; }
     }
   `],
@@ -168,7 +231,13 @@ export class KpiCardComponent {
   readonly loading = input(false);
   /** Percent change vs previous period. Leave null unless it is REAL. */
   readonly delta = input<number | null>(null);
+  /** Only pass a series that is genuinely a history of `value`. See the note
+   *  on this component's class comment. */
   readonly spark = input<number[]>([]);
+  /** Renders the card as a button and shows the "View breakdown" cue. */
+  readonly clickable = input(false);
+
+  readonly drill = output<void>();
 
   protected readonly display = signal('0');
   protected readonly absDelta = computed(() => Math.abs(this.delta() ?? 0));
@@ -196,7 +265,7 @@ export class KpiCardComponent {
       this.display.set(target.toLocaleString());
       return;
     }
-    const duration = 780;
+    const duration = 800;
     const start = performance.now();
     const tick = (now: number) => {
       const p = Math.min((now - start) / duration, 1);

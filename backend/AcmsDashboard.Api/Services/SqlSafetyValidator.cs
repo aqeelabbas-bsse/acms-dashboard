@@ -15,10 +15,16 @@ public class SqlSafetyValidator
 {
     // Only these tables may be referenced. AspNetUsers is deliberately absent -
     // it contains password hashes and must never be reachable by the agent.
+    //
+    // PersonalRFID added: staff/employee RFID access cards (distinct from
+    // PersonalVisitorRFID, which tracks per-visit card assignments for VISITORS).
+    // Missing from this set is what caused "which cards are blocked - personal
+    // or visitor?" style questions to be rejected as unsafe, even though
+    // PersonalRFID is a perfectly safe read table with no sensitive columns.
     private static readonly HashSet<string> AllowedTables = new(StringComparer.OrdinalIgnoreCase)
     {
         "PersonalSmartCard", "CardRequestProcess", "VisitorInfo",
-        "VisitorsRFID", "PersonalVisitorRFID",
+        "VisitorsRFID", "PersonalVisitorRFID", "PersonalRFID",
         "DailyCardStats", "VisitorTrafficDaily", "CardFunnelStats"
     };
 
@@ -52,22 +58,16 @@ public class SqlSafetyValidator
         if (sql.Length == 0)
             return new(false, "The model returned no usable SQL.", null);
 
-        // 1. Must be a single statement. Strip the trailing semicolon first, so any
-        //    REMAINING one indicates stacked statements.
         sql = sql.TrimEnd(';', ' ', '\n', '\r', '\t');
         if (sql.Contains(';'))
             return new(false, "Multiple SQL statements are not permitted.", null);
 
-        // 2. Comment markers can hide payloads from a human reviewer.
         if (sql.Contains("--") || sql.Contains("/*"))
             return new(false, "SQL comments are not permitted.", null);
 
-        // 3. Must begin with SELECT. Rejects WITH/CTEs too - a deliberate
-        //    simplicity/safety trade-off for this project's question types.
         if (!Regex.IsMatch(sql, @"^\s*SELECT\b", RegexOptions.IgnoreCase))
             return new(false, "Only SELECT statements are permitted.", null);
 
-        // 4. Write keywords anywhere.
         var write = WriteKeywords.Match(sql);
         if (write.Success)
             return new(false, $"Blocked keyword '{write.Value}' detected.", null);
@@ -75,22 +75,17 @@ public class SqlSafetyValidator
         if (SelectInto.IsMatch(sql))
             return new(false, "SELECT ... INTO is not permitted.", null);
 
-        // 5. Sensitive columns.
         var sensitive = SensitiveColumns.Match(sql);
         if (sensitive.Success)
             return new(false, $"Column '{sensitive.Value}' is not accessible.", null);
 
-        // 6. System catalogs / Identity tables.
         var sysObj = SystemObjects.Match(sql);
         if (sysObj.Success)
             return new(false, $"Access to '{sysObj.Value}' is not permitted.", null);
 
-        // 7. SELECT * would expand to denied columns and fail at SQL level anyway -
-        //    reject early with a clearer message.
         if (Regex.IsMatch(sql, @"SELECT\s+\*", RegexOptions.IgnoreCase))
             return new(false, "SELECT * is not permitted; name columns explicitly.", null);
 
-        // 8. Table allowlist.
         var referenced = TableRefs.Matches(sql)
             .Select(m => m.Groups[1].Value)
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -105,14 +100,12 @@ public class SqlSafetyValidator
                 return new(false, $"Table '{table}' is not in the allowed set.", null);
         }
 
-        // 9. Sanity bound on length.
         if (sql.Length > 4000)
             return new(false, "Generated query is unreasonably long.", null);
 
         return new(true, null, sql);
     }
 
-    /// <summary>Strips markdown fences and stray prose the model may wrap around the SQL.</summary>
     private static string Clean(string raw)
     {
         var s = raw.Trim();

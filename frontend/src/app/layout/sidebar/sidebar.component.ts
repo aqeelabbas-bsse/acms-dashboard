@@ -8,6 +8,23 @@ import { AuthService } from '../../core/services/auth.service';
 interface NavItem { label: string; path: string; icon: IconName; roles?: Role[]; }
 interface NavGroup { title: string; items: NavItem[]; }
 
+/**
+ * ── On the removed "Ask ACMS" card ───────────────────────────────────────
+ * The sidebar used to end with a violet promo card whose only function was to
+ * open the assistant. The floating orb in the bottom-right corner already does
+ * exactly that, from every screen, and stays visible when the sidebar is
+ * collapsed on narrow viewports — so the card was a second entry point to the
+ * same panel, occupying the largest block of colour in the navigation and
+ * competing with the nav items for attention.
+ *
+ * Removing it leaves the orb as the single entry point (its tooltip carries
+ * the "query in plain English" line the card used to make) and gives the
+ * sidebar room for the Help group.
+ *
+ * The `askAgent` output is kept on the component so ShellComponent's existing
+ * binding does not break, and so a future contextual "ask about this screen"
+ * affordance has somewhere to attach.
+ */
 @Component({
   selector: 'acms-sidebar',
   standalone: true,
@@ -40,13 +57,9 @@ interface NavGroup { title: string; items: NavItem[]; }
         }
       </nav>
 
-      <div class="cta">
-        <div class="cta-row">
-          <acms-icon name="sparkle" [size]="15" [weight]="2" />
-          <span>Ask ACMS</span>
-        </div>
-        <p>Query access data in plain English - no SQL needed.</p>
-        <button type="button" (click)="askAgent.emit()">Open assistant</button>
+      <div class="foot">
+        <span class="foot__v">ACMS Dashboard v1.0</span>
+        <span class="foot__o">NASTP</span>
       </div>
     </aside>
   `,
@@ -95,6 +108,7 @@ interface NavGroup { title: string; items: NavItem[]; }
     }
     .nav acms-icon { opacity: .72; flex-shrink: 0; }
     .nav:hover { background: var(--hover-wash); color: var(--ink); }
+    .nav:focus-visible { outline: 2px solid var(--violet-fg); outline-offset: -2px; }
     .nav.active {
       background: linear-gradient(135deg, rgba(124,108,240,.18), rgba(62,142,247,.12));
       color: var(--violet-fg); font-weight: 600;
@@ -102,30 +116,16 @@ interface NavGroup { title: string; items: NavItem[]; }
     }
     .nav.active acms-icon { opacity: 1; }
 
-    .cta {
-      margin-top: var(--s-4); padding: var(--s-4);
-      border-radius: var(--r-md); position: relative; overflow: hidden;
-      background: linear-gradient(150deg, #7C6CF0, #5B4CD6 60%, #3E8EF7);
-      color: #fff; box-shadow: var(--sh-brand);
+    /* Replaces the promo card: a quiet build stamp that grounds the panel
+       without competing with the navigation above it. */
+    .foot {
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 8px; margin-top: var(--s-4); padding: var(--s-4) 12px 4px;
+      border-top: 1px solid var(--track);
     }
-    .cta::after {
-      content: ''; position: absolute; top: -30%; right: -20%;
-      width: 140px; height: 140px; border-radius: 50%;
-      background: radial-gradient(circle, rgba(255,255,255,.32), transparent 70%);
-    }
-    .cta-row { display: flex; align-items: center; gap: 7px;
-               font-weight: 600; font-size: var(--fs-sm);
-               position: relative; z-index: 1; }
-    .cta p { margin: 6px 0 var(--s-3); font-size: var(--fs-xs);
-             line-height: 1.5; opacity: .9; position: relative; z-index: 1; }
-    .cta button {
-      position: relative; z-index: 1; width: 100%; padding: 9px;
-      border: none; border-radius: 11px;
-      background: rgba(255,255,255,.22); color: #fff;
-      font-weight: 600; font-size: var(--fs-sm); cursor: pointer;
-      transition: background var(--t-fast) var(--ease);
-    }
-    .cta button:hover { background: rgba(255,255,255,.34); }
+    .foot__v { font-size: var(--fs-xs); color: var(--ink-dim); }
+    .foot__o { font-size: 10px; font-weight: 700; letter-spacing: .08em;
+               text-transform: uppercase; color: var(--ink-dim); opacity: .7; }
 
     @media (max-width: 1024px) {
       .side {
@@ -140,6 +140,7 @@ interface NavGroup { title: string; items: NavItem[]; }
 export class SidebarComponent {
   readonly open = input(false);
   readonly navigate = output<void>();
+  /** Retained for ShellComponent's existing binding; no longer fired here. */
   readonly askAgent = output<void>();
 
   protected readonly auth = inject(AuthService);
@@ -162,6 +163,9 @@ export class SidebarComponent {
     ]},
     { title: 'System', items: [
       { label: 'Admin', path: '/admin', icon: 'shield', roles: ['Admin'] },
+    ]},
+    { title: 'Help', items: [
+      { label: 'FAQ & User Guide', path: '/help', icon: 'help' },
     ]},
   ];
 }

@@ -15,16 +15,17 @@ import { ChartComponent } from '../../shared/ui/chart/chart.component';
 import { AuditFeedComponent } from '../../shared/ui/audit-feed/audit-feed.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { SegmentedComponent, SegmentOption } from '../../shared/ui/segmented/segmented.component';
+import { ExportMenuComponent, ExportFormat } from '../../shared/ui/export-menu/export-menu.component';
 import { DrilldownModalComponent } from '../../shared/ui/drilldown/drilldown-modal.component';
 import { DrilldownService } from '../../core/services/drilldown.service';
-import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.models';
+import { DRILLDOWN_META, DRILL_TILE_KINDS, DrilldownKind } from '../../core/models/drilldown.models';
 
 @Component({
   selector: 'acms-dashboard',
   standalone: true,
   imports: [
     GlassCardComponent, KpiCardComponent, ChartComponent, AuditFeedComponent,
-    IconComponent, SegmentedComponent, DrilldownModalComponent,
+    IconComponent, SegmentedComponent, ExportMenuComponent, DrilldownModalComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -39,16 +40,9 @@ import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.model
         <div class="tools">
           <acms-segmented [options]="ranges" [(value)]="range" />
 
-          <button class="ghost" type="button" (click)="exportCsv()"
-                  [disabled]="loading()" title="Download the current series as CSV">
-            <acms-icon name="chevron" [size]="14" [weight]="2.2" />
-            Export
-          </button>
-
-          <button class="ghost" type="button" (click)="print()" title="Print or save as PDF">
-            <acms-icon name="printer" [size]="14" [weight]="2" />
-            PDF
-          </button>
+          <!-- One Export control instead of two buttons: "Export" and "PDF"
+               were both exports, differing only in file type. -->
+          <acms-export-menu [disabled]="loading()" (exportAs)="onExport($event)" />
 
           <button class="primary" type="button" (click)="load()" [disabled]="loading()">
             <acms-icon name="refresh" [size]="15" [weight]="2" />
@@ -64,23 +58,29 @@ import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.model
         </div>
       }
 
-      <!-- KPI row -->
+      <!-- KPI row. Every card is drillable: clicking opens the same
+           breakdown -> searchable grid flow as the tiles below, and each one
+           publishes the SQL predicate behind its number. -->
       <section class="kpis stagger">
         <acms-kpi-card label="Total Employees" tone="violet" icon="users"
           [value]="kpi()?.totalEmployees ?? null" [loading]="loading()"
-          [spark]="submittedSeries()" note="Registered smart-card profiles" />
+          note="Registered smart-card profiles"
+          [clickable]="true" (drill)="openDrilldown('total-employees')" />
 
         <acms-kpi-card label="Active Visitor Cards" tone="cyan" icon="card"
           [value]="kpi()?.activeCards ?? null" [loading]="loading()"
-          [spark]="printedSeries()" note="Cards issued and active" />
+          note="Passes issued and not blocked"
+          [clickable]="true" (drill)="openDrilldown('active-visitor-cards')" />
 
         <acms-kpi-card label="Visitors On Site Now" tone="blue" icon="pin"
           [value]="liveOccupancy()" [loading]="loading()"
-          [note]="occupancyNote()" />
+          [note]="occupancyNote()"
+          [clickable]="true" (drill)="openDrilldown('visitors-on-site')" />
 
         <acms-kpi-card label="Pending Staff Requests" tone="rose" icon="clock"
           [value]="kpi()?.pendingRequests ?? null" [loading]="loading()"
-          note="Awaiting verification or printing" />
+          note="Awaiting verification or printing"
+          [clickable]="true" (drill)="openDrilldown('pending-requests')" />
       </section>
 
       <!-- Primary analytics row -->
@@ -107,8 +107,8 @@ import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.model
         </acms-glass-card>
       </section>
 
-      <!-- Access control breakdown - Reqs 1, 2, 4, 5, 6: click any tile to
-           drill from a KPI into a category histogram into a searchable grid. -->
+      <!-- Access control breakdown - click any tile to drill from a KPI into a
+           category histogram into a searchable grid. -->
       <section class="drill-tiles stagger">
         @for (t of drilldownTiles(); track t.kind) {
           <button type="button" class="dtile" [attr.data-tone]="t.tone" (click)="openDrilldown(t.kind)">
@@ -128,12 +128,15 @@ import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.model
                       [loading]="loading()" [height]="220"
                       ariaLabel="Horizontal funnel of card requests by stage"
                       emptyIcon="card"
-                      emptyMessage="No requests in this period." />
+                      emptyMessage="No requests submitted in this period." />
           @if (conversion() !== null) {
             <div class="conv">
               <span class="conv__k">{{ conversion() }}%</span>
               <span class="conv__v">submitted &rarr; printed conversion</span>
             </div>
+          }
+          @if (funnelBasis(); as basis) {
+            <p class="basis"><acms-icon name="alert" [size]="11" />{{ basis }}</p>
           }
         </acms-glass-card>
 
@@ -169,31 +172,25 @@ import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.model
     :host { display: block; }
 
     .page { display: flex; align-items: flex-end; justify-content: space-between;
-            gap: var(--s-6); flex-wrap: wrap; margin-bottom: var(--s-6); }
+            gap: var(--s-6); flex-wrap: wrap; margin-bottom: var(--s-6);
+            position: relative; z-index: 30; }
     .title { font-size: var(--fs-2xl); font-weight: 700; margin: 6px 0 4px; }
     .sub { margin: 0; color: var(--ink-muted); }
     .tools { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
 
-    .primary, .ghost {
+    .primary {
       display: inline-flex; align-items: center; gap: 7px;
       height: 38px; padding: 0 16px;
       border-radius: var(--r-pill);
       font-family: var(--font-body); font-size: var(--fs-sm); font-weight: 600;
       cursor: pointer; white-space: nowrap;
       transition: all var(--t-fast) var(--ease);
-    }
-    .primary {
       border: none; color: #fff;
       background: linear-gradient(135deg, var(--violet), var(--violet-deep));
       box-shadow: var(--sh-brand);
     }
     .primary:hover:not(:disabled) { transform: translateY(-1px); }
-    .ghost {
-      border: 1px solid var(--glass-border);
-      background: var(--hover-wash); color: var(--ink-muted);
-    }
-    .ghost:hover:not(:disabled) { background: var(--hover-wash-2); color: var(--ink); }
-    .primary:disabled, .ghost:disabled { opacity: .5; cursor: not-allowed; }
+    .primary:disabled { opacity: .5; cursor: not-allowed; }
 
     .alert {
       display: flex; gap: var(--s-3); align-items: flex-start;
@@ -207,7 +204,7 @@ import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.model
       display: grid; grid-template-columns: repeat(5, 1fr);
       gap: var(--s-4); margin: 0 0 var(--s-6);
     }
-.dtile {
+    .dtile {
       position: relative;
       overflow: hidden;
       display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
@@ -218,18 +215,18 @@ import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.model
       transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
     }
     .dtile:hover { transform: translateY(-3px); box-shadow: var(--sh-float), inset 0 1px 0 rgba(255,255,255,.18); }
+    .dtile:focus-visible { outline: none; box-shadow: var(--sh-float), 0 0 0 3px rgba(255,255,255,.85); }
 
     /* Same formula as the big KPI cards: deep, contrast-checked stop where
-       the text sits (all ≥5:1 with white), vivid stop only in the far
+       the text sits (all >=5:1 with white), vivid stop only in the far
        corner where no text lives. */
     .dtile[data-tone='teal']   { background: linear-gradient(115deg, #155E63 0%, #0E7490 55%, #22D3EE 100%); }
     .dtile[data-tone='rose']   { background: linear-gradient(115deg, #9F1239 0%, #E11D48 55%, #FB7185 100%); }
     .dtile[data-tone='amber']  { background: linear-gradient(115deg, #92400E 0%, #D97706 55%, #FBBF24 100%); }
     .dtile[data-tone='blue']   { background: linear-gradient(115deg, #1E3A8A 0%, #2563EB 55%, #60A5FA 100%); }
     .dtile[data-tone='violet'] { background: linear-gradient(115deg, #4C3BC4 0%, #6D5AE8 55%, #8B5CF6 100%); }
+    .dtile[data-tone='cyan']   { background: linear-gradient(115deg, #155E75 0%, #0E7490 55%, #22D3EE 100%); }
 
-    /* Soft glow in the vivid corner - the same "lit corner" treatment the
-       big cards use, just smaller. */
     .dtile::after {
       content: '';
       position: absolute; top: -30%; right: -18%;
@@ -240,8 +237,6 @@ import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.model
     }
     .dtile:hover::after { opacity: 1.15; }
 
-    /* Icon stays neutral white/translucent on every tone - it sits on a
-       coloured card now, so it doesn't need its own colour too. */
     .dtile__ic {
       position: relative; z-index: 1;
       display: grid; place-items: center; width: 30px; height: 30px;
@@ -295,6 +290,14 @@ import { DRILLDOWN_META, DrilldownKind } from '../../core/models/drilldown.model
                font-weight: 700; color: var(--violet-fg); }
     .conv__v { font-size: var(--fs-xs); color: var(--ink-muted); }
 
+    /* States which population the percentage describes. Without it the figure
+       invites the reading "printed / submitted on these same days", which is
+       what made an out-of-cohort result look like a bug. */
+    .basis { display: flex; align-items: flex-start; gap: 6px;
+             margin: 8px 0 0; font-size: var(--fs-xs); color: var(--ink-dim);
+             line-height: 1.5; }
+    .basis acms-icon { flex-shrink: 0; margin-top: 3px; }
+
     .stamp { display: flex; align-items: center; gap: 6px;
              margin: var(--s-6) 0 0; font-size: var(--fs-xs); color: var(--ink-dim); }
 
@@ -312,15 +315,17 @@ export class DashboardComponent implements OnInit {
   private readonly exporter = inject(ExportService);
   protected readonly hub = inject(SignalrService);
 
-  /* ---------- Drill-down tiles (Reqs 1, 2, 4, 5, 6) ---------- */
+  /* ---------- Drill-downs ---------- */
 
   protected readonly openKind = signal<DrilldownKind | null>(null);
 
   private readonly drilldownTotals = signal<Partial<Record<DrilldownKind, number>>>({});
 
-protected readonly drilldownTiles = computed(() => {
+  /** Only the five tile kinds render here. The four KPI kinds share the same
+   *  modal but already have their number from /analytics/summary. */
+  protected readonly drilldownTiles = computed(() => {
     const totals = this.drilldownTotals();
-    return (Object.keys(DRILLDOWN_META) as DrilldownKind[]).map((kind) => ({
+    return DRILL_TILE_KINDS.map(kind => ({
       kind,
       icon: DRILLDOWN_META[kind].icon,
       title: DRILLDOWN_META[kind].title,
@@ -333,13 +338,13 @@ protected readonly drilldownTiles = computed(() => {
     this.openKind.set(kind);
   }
 
-  /** Fires each tile's summary independently so one slow/failing kind never
+  /** Fires each tile's summary independently so one slow or failing kind never
    *  blocks the other four from showing their counts. */
   private loadDrilldownTotals(): void {
-    (Object.keys(DRILLDOWN_META) as DrilldownKind[]).forEach((kind) => {
+    DRILL_TILE_KINDS.forEach(kind => {
       this.drilldownSvc.summary(kind).subscribe({
-        next: (s) => this.drilldownTotals.update((t) => ({ ...t, [kind]: s.total })),
-        error: () => { /* tile just shows an em-dash; the modal will surface the real error if opened */ },
+        next: s => this.drilldownTotals.update(t => ({ ...t, [kind]: s.total })),
+        error: () => { /* tile shows an em-dash; the modal surfaces the real error */ },
       });
     });
   }
@@ -354,9 +359,6 @@ protected readonly drilldownTiles = computed(() => {
 
   private readonly dailyRows = signal<EtlRow[]>([]);
   private readonly trafficRows = signal<EtlRow[]>([]);
-
-  protected readonly submittedSeries = computed(() => series(this.dailyRows(), 'submitted'));
-  protected readonly printedSeries = computed(() => series(this.dailyRows(), 'printed'));
 
   protected readonly range = signal('30');
   protected readonly ranges: SegmentOption[] = [
@@ -426,9 +428,10 @@ protected readonly drilldownTiles = computed(() => {
   };
 
   /**
-   * Reads from `funnel().totals`, not a flat object - the real API returns
-   * a daily points[] series plus an aggregate totals{} block. See
-   * FunnelStats in api.models.ts.
+   * Reads from `funnel().totals`, not a flat object - the API returns a daily
+   * points[] series plus an aggregate totals{} block. The totals are a cohort:
+   * requests SUBMITTED in the window, tracked to their current stage, so the
+   * three bars decrease monotonically and the rate cannot exceed 100%.
    */
   protected readonly funnelData = computed<ChartData>(() => {
     const f = this.funnel();
@@ -458,13 +461,13 @@ protected readonly drilldownTiles = computed(() => {
     },
   };
 
-  /** The API already computes this (`overallConversionRate`) - use it
-   *  directly rather than recomputing from raw counts. */
   protected readonly conversion = computed(() => {
     const f = this.funnel();
     if (!f || !f.totals.submitted) return null;
     return Math.round(f.totals.overallConversionRate);
   });
+
+  protected readonly funnelBasis = computed(() => this.funnel()?.totals?.basis ?? null);
 
   protected readonly statusData = computed<ChartData>(() => {
     const k = this.kpi();
@@ -544,7 +547,12 @@ protected readonly drilldownTiles = computed(() => {
 
   /* ---------- Export ---------- */
 
-  protected exportCsv(): void {
+  protected onExport(format: ExportFormat): void {
+    if (format === 'csv') this.exportCsv();
+    else this.print();
+  }
+
+  private exportCsv(): void {
     const rows = this.dailyRows();
     if (!rows.length) return;
     this.exporter.exportCsv(rows, [
@@ -555,7 +563,7 @@ protected readonly drilldownTiles = computed(() => {
     ], 'acms-card-activity');
   }
 
-  protected print(): void {
+  private print(): void {
     const el = this.printArea()?.nativeElement;
     if (el) this.exporter.printElement(el, 'ACMS Dashboard');
   }

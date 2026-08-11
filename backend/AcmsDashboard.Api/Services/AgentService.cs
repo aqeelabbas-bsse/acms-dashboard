@@ -52,10 +52,23 @@ public class AgentService
           CardStatus bit) - visitor registration and entry/exit log.
           A visitor is currently ON-SITE when ExitDate IS NULL.
         - VisitorsRFID(SmartCardNo varchar PK, isActive bit, isBlocked bit,
-          CheckStatus bit, ActiveDate datetime, BlockedDate datetime) - RFID card state
+          CheckStatus bit, ActiveDate datetime, BlockedDate datetime) - VISITOR RFID
+          card-level state (the physical card, one row per card issued to a visitor)
         - PersonalVisitorRFID(RegID int PK, CNIC varchar, SmartCardNo varchar,
           ActivationDate datetime, DeactiveDate datetime, IsActive bit, IsDeactive bit,
-          FullAccess int, Remarks varchar) - per-visitor card assignment history
+          FullAccess int, Remarks varchar) - per-visit RFID assignment history for
+          VISITORS (links a visitor's CNIC to the visitor card they were issued)
+        - PersonalRFID(RegID int PK, CNIC varchar, SmartCardNo varchar,
+          ActivationDate datetime, DeactiveDate datetime, ReactivateDate datetime,
+          IsActive bit, IsDeactive bit, CardStatus int, FullAccess int,
+          Remarks varchar, AccessRemarks varchar) - STAFF/EMPLOYEE personal RFID
+          access cards. This is a DIFFERENT table from PersonalVisitorRFID - this
+          one is for employees (join to PersonalSmartCard via CNIC), the other is
+          for visitors (join to VisitorInfo via CNIC).
+          A staff card is ACTIVE when IsActive = 1.
+          A staff card is BLOCKED when IsDeactive = 1 AND Remarks starts with '[BLOCK:'.
+          A staff card is plainly deactivated (not blocked) when IsDeactive = 1 and
+          Remarks does NOT start with '[BLOCK:'.
         - DailyCardStats(StatDate date PK, Submitted int, Verified int, Printed int,
           AvgProcessingHours float) - daily pre-aggregated card metrics
         - VisitorTrafficDaily(StatDate date PK, EntryCount int, ExitCount int,
@@ -63,8 +76,14 @@ public class AgentService
         - CardFunnelStats(StatDate date PK, Submitted int, Verified int, Printed int,
           ConversionRate float, BottleneckStage varchar) - daily funnel conversion
 
-        JOINS: tables link by CNIC, or by VisitorInfo.CardSerialNumber = VisitorsRFID.SmartCardNo.
+        JOINS: tables link by CNIC, or by VisitorInfo.CardSerialNumber = VisitorsRFID.SmartCardNo,
+        or by PersonalRFID.SmartCardNo / PersonalVisitorRFID.SmartCardNo for card lookups.
         No foreign keys are declared, so always join explicitly.
+
+        DISTINGUISHING PERSONAL (STAFF) FROM VISITOR CARDS: if asked whether an RFID
+        card belongs to a staff member or a visitor, check PersonalRFID for staff
+        cards and VisitorsRFID/PersonalVisitorRFID for visitor cards - they are
+        separate tables with separate SmartCardNo values, not one shared table.
 
         HARD RULES:
         1. Output ONE SELECT statement and nothing else. No prose, no markdown, no

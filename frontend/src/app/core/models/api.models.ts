@@ -39,6 +39,8 @@ export interface FunnelStats {
     printed: number;
     overallConversionRate: number;
     avgProcessingHours: number;
+    /** Plain-English statement of which cohort the totals describe. */
+    basis?: string;
   };
 }
 

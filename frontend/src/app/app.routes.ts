@@ -63,13 +63,21 @@ export const routes: Routes = [
         pathMatch: 'full',
       },
       {
-        // Phase 14: real Admin Console (user management + sign-off view),
-        // replacing the DashboardComponent placeholder that lived here
-        // through Phase 13.
+        // Phase 14: real Admin Console (user management), replacing the
+        // DashboardComponent placeholder that lived here through Phase 13.
         path: 'admin',
         canActivate: [roleGuard('Admin')],
         loadComponent: () =>
           import('./pages/admin/admin.component').then(m => m.AdminComponent),
+      },
+      {
+        // Help centre: in-app FAQ plus the downloadable User Guide and
+        // Technical Documentation. Open to every signed-in role - the
+        // Technical Documentation card inside it is Admin-gated on its own,
+        // because it lists development credentials.
+        path: 'help',
+        loadComponent: () =>
+          import('./pages/help/help.component').then(m => m.HelpComponent),
       },
     ],
   },

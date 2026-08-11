@@ -26,10 +26,15 @@ public class AnalyticsController : ControllerBase
 
     /// <summary>
     /// GET /v1/analytics/summary — KPI cards.
-    /// NOTE: these are point-in-time counts ("on-site NOW", "pending NOW"), which a
-    /// daily summary table structurally cannot answer, so they are queried live.
-    /// FR-ANL-04's "no live aggregation" rule applies to the trend charts below,
-    /// which do read exclusively from ETL output.
+    ///
+    /// These are point-in-time counts ("on-site NOW", "pending NOW"), which a
+    /// daily summary table structurally cannot answer, so they are queried
+    /// live. FR-ANL-04's "no live aggregation" rule applies to the trend charts
+    /// below, which do read exclusively from ETL output.
+    ///
+    /// Each predicate here is duplicated verbatim in DrilldownQueryService so
+    /// that opening a KPI card shows exactly the rows that produced its number.
+    /// If one changes, the other must change with it.
     /// </summary>
     [HttpGet("summary")]
     public async Task<IActionResult> Summary()
@@ -46,7 +51,27 @@ public class AnalyticsController : ControllerBase
         });
     }
 
-    /// <summary>GET /v1/analytics/funnel?from=&amp;to= — reads ETL output only.</summary>
+    /// <summary>
+    /// GET /v1/analytics/funnel?from=&amp;to=
+    ///
+    /// ── Why the totals block no longer sums the daily ETL rows ────────────
+    /// The ETL attributes each stage to the date that stage happened on:
+    /// submitted -> ProcessDate, verified -> MarkedOn, printed -> PrintingDate.
+    /// That is correct for the daily activity chart, but summing those columns
+    /// over a window and dividing printed by submitted compares two different
+    /// populations. A card submitted on 1 July and printed on 4 August
+    /// contributes its "printed" to a 30-day window that never saw its
+    /// "submitted" — which is exactly how this endpoint reported a 300%
+    /// conversion rate (3 printed against 1 submitted in the same 30 days).
+    ///
+    /// The totals block is therefore a COHORT measure: take the requests
+    /// SUBMITTED inside the window, then ask how far that same set got. Printed
+    /// is a subset of verified, which is a subset of submitted, so the rate is
+    /// bounded at 100% by construction rather than by clamping after the fact.
+    ///
+    /// `points` is unchanged — the daily bars are a genuine activity series and
+    /// still come from ETL output only.
+    /// </summary>
     [HttpGet("funnel")]
     public async Task<IActionResult> Funnel([FromQuery] DateOnly? from, [FromQuery] DateOnly? to)
     {
@@ -61,21 +86,45 @@ public class AnalyticsController : ControllerBase
         var points = rows.Select(r => new FunnelPointDto(
             r.StatDate, r.Submitted, r.Verified, r.Printed, r.ConversionRate, r.BottleneckStage));
 
-        var totalSubmitted = rows.Sum(r => r.Submitted);
-        var totalVerified  = rows.Sum(r => r.Verified);
-        var totalPrinted   = rows.Sum(r => r.Printed);
+        // ── cohort totals ──
+        var startDt = start.ToDateTime(TimeOnly.MinValue);
+        var endDt   = end.ToDateTime(TimeOnly.MaxValue);
 
-        var avgHours = await _analytics.DailyCardStats
+        var cohort = await _db.CardRequestProcesses
             .AsNoTracking()
-            .Where(x => x.StatDate >= start && x.StatDate <= end && x.AvgProcessingHours != null)
-            .AverageAsync(x => (double?)x.AvgProcessingHours);
+            .Where(r => r.ProcessDate != null && r.ProcessDate >= startDt && r.ProcessDate <= endDt)
+            .Select(r => new { r.IsVerified, r.IsPrinted, r.ProcessDate, r.PrintingDate })
+            .ToListAsync();
+
+        var submitted = cohort.Count;
+
+        // A printed card necessarily cleared verification, even where the
+        // isVerified flag was never written back. Treating printing as implying
+        // verification is what keeps the three bars monotonically decreasing
+        // instead of showing a middle bar shorter than the last one.
+        var verified = cohort.Count(r => r.IsVerified == true || r.IsPrinted == true);
+        var printed  = cohort.Count(r => r.IsPrinted == true);
+
+        var durations = cohort
+            .Where(r => r.IsPrinted == true && r.PrintingDate != null && r.ProcessDate != null)
+            .Select(r => (r.PrintingDate!.Value - r.ProcessDate!.Value).TotalHours)
+            .ToList();
 
         var totals = new FunnelTotalsDto(
-            totalSubmitted, totalVerified, totalPrinted,
-            totalSubmitted > 0 ? Math.Round(totalPrinted * 100.0 / totalSubmitted, 2) : 0,
-            avgHours.HasValue ? Math.Round(avgHours.Value, 2) : null);
+            submitted,
+            verified,
+            printed,
+            submitted > 0 ? Math.Round(printed * 100.0 / submitted, 2) : 0,
+            durations.Count > 0 ? Math.Round(durations.Average(), 2) : null,
+            $"Requests submitted between {start:dd MMM yyyy} and {end:dd MMM yyyy}, "
+            + "tracked to their current stage.");
 
-        return Ok(new { success = true, data = new { points, totals }, meta = new { from = start, to = end } });
+        return Ok(new
+        {
+            success = true,
+            data = new { points, totals },
+            meta = new { from = start, to = end, cohortSize = submitted }
+        });
     }
 
     /// <summary>GET /v1/analytics/traffic?from=&amp;to= — reads ETL output only.</summary>
