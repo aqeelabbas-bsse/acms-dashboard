@@ -186,7 +186,7 @@ export class RfidComponent {
   ];
 
   protected readonly activeCount = computed(() =>
-    this.rows().filter(c => !c.isBlocked).length);
+    this.rows().filter(c => c.isActive && !c.isBlocked).length);
   protected readonly blockedCount = computed(() =>
     this.rows().filter(c => c.isBlocked).length);
 
