@@ -1,7 +1,3 @@
-// =============================================================================
-// src/app/pages/admin/admin-users.component.ts
-// =============================================================================
-
 import {
   ChangeDetectionStrategy, Component, OnDestroy, ViewChild, computed, effect, inject, signal,
 } from '@angular/core';
@@ -14,72 +10,102 @@ import { GlassCardComponent } from '../../shared/ui/glass-card/glass-card.compon
 import { SearchInputComponent } from '../../shared/ui/search-input/search-input.component';
 import { PaginatorComponent } from '../../shared/ui/paginator/paginator.component';
 import { EmptyStateComponent } from '../../shared/ui/empty-state/empty-state.component';
-import { SegmentedComponent, SegmentOption } from '../../shared/ui/segmented/segmented.component';
 import { IconComponent } from '../../shared/ui/icon/icon.component';
+import { IconName } from '../../shared/ui/icon/icons';
 import { UserFormModalComponent } from './user-form-modal.component';
 
+/**
+ * ── Why this file was rewritten ──────────────────────────────────────────
+ * The screen looked like it belonged to a different application, and the
+ * cause was concrete rather than a matter of taste: it referenced four CSS
+ * custom properties that do not exist in styles.scss — `--line`, `--ease-out`,
+ * `--surface-2` and `--accent`. Undefined custom properties fail silently to
+ * their fallback, so every border on the page rendered as a flat neutral grey
+ * (rgba(127,127,127,…)) that matches neither the light nor the dark theme,
+ * and every transition fell back to plain `ease` while the rest of the app
+ * uses the shared easing curve.
+ *
+ * On top of that, sizing was hard-coded in rem (.74rem, .78rem, .86rem)
+ * instead of the --fs-* scale, and shadows were hand-rolled rather than
+ * --sh-card / --sh-lift. Individually small; together they are exactly why
+ * this screen read as unfinished next to the dashboard.
+ *
+ * Everything here now resolves against real tokens. The other change is
+ * structural: the toolbar was two rows — a search row, then a bordered box
+ * containing two labelled segmented controls — which is a great deal of
+ * furniture for three filters. It is now one row, with the two segmented
+ * controls replaced by native selects. Fewer pixels, same capability, and
+ * selects scale to more roles without the row wrapping.
+ */
 @Component({
   selector: 'acms-admin-users',
   standalone: true,
   imports: [
-    GlassCardComponent, SearchInputComponent, PaginatorComponent, EmptyStateComponent,
-    SegmentedComponent, IconComponent, UserFormModalComponent,
+    GlassCardComponent, SearchInputComponent, PaginatorComponent,
+    EmptyStateComponent, IconComponent, UserFormModalComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <!-- Stat tiles, matching the dashboard's KpiCardComponent treatment:
-         angled gradient fill (deep on the text side, vivid in the decorative
-         corner - contrast-checked, not just a bright block), a soft corner
-         glow, and a specular sheen sweep on hover. NOT wrapped in
-         acms-glass-card - these are solid gradient surfaces like the real
-         KPI cards, not translucent glass. Deactivated deliberately uses a
-         desaturated slate gradient instead of a vivid tone, so the one
-         "off" stat visually reads as quieter than the other three. -->
-    <div class="tiles">
+    <!-- Stat tiles. Same gradient treatment as the dashboard KPI cards, but
+         deliberately shorter: these are reference figures, not the point of
+         the screen, so they must not out-weigh the table below them. -->
+    <div class="tiles stagger">
       @for (t of tiles(); track t.label) {
         <div class="tile" [attr.data-tone]="t.tone">
           <span class="tile__glow" aria-hidden="true"></span>
-          <span class="tile__sheen" aria-hidden="true"></span>
-          <span class="tile__icon">
-            <acms-icon [name]="t.icon" [size]="18" [weight]="2.2" />
-          </span>
+          <span class="tile__ic"><acms-icon [name]="t.icon" [size]="16" [weight]="2.2" /></span>
           <div class="tile__body">
-            <span class="tile__value">{{ t.value }}</span>
-            <span class="tile__label">{{ t.label }}</span>
+            <span class="tile__v">{{ t.value }}</span>
+            <span class="tile__l">{{ t.label }}</span>
           </div>
         </div>
       }
     </div>
 
-    <!-- Row 1: search + the primary action, together - this is what you scan
-         for first. Row 2: filters, visually demoted and labeled so "Role"
-         and "Status" read as two distinct groups instead of two unlabeled
-         segmented controls sitting next to each other. -->
-    <div class="controls">
-      <div class="controls__top">
-        <acms-search-input class="controls__search" [(value)]="search"
-                            placeholder="Search username or email..." />
-        <button class="btn btn--primary" type="button" (click)="openCreate()">
-          New account
-        </button>
-      </div>
+    <!-- One row. Search takes the free space; the two filters and the primary
+         action sit at natural width on the right. -->
+    <div class="bar">
+      <acms-search-input class="bar__search" [(value)]="search"
+                         placeholder="Search username or email..." />
 
-      <div class="controls__filters">
-        <div class="filter-group">
-          <span class="filter-group__label">Role</span>
-          <acms-segmented [options]="roleOptions" [(value)]="roleFilter" />
-        </div>
-        <span class="filter-divider" aria-hidden="true"></span>
-        <div class="filter-group">
-          <span class="filter-group__label">Status</span>
-          <acms-segmented [options]="statusOptions" [(value)]="statusFilter" />
-        </div>
-      </div>
+      <label class="sel">
+        <span class="sr-only">Filter by role</span>
+        <select [value]="roleFilter()" (change)="roleFilter.set(val($event))">
+          <option value="">All roles</option>
+          <option value="Admin">Admin</option>
+          <option value="Security">Security</option>
+          <option value="Printer">Printer</option>
+          <option value="Viewer">Viewer</option>
+        </select>
+        <acms-icon name="chevron" [size]="13" [weight]="2.2" class="sel__c" />
+      </label>
+
+      <label class="sel">
+        <span class="sr-only">Filter by status</span>
+        <select [value]="statusFilter()" (change)="statusFilter.set(val($event))">
+          <option value="">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Deactivated</option>
+        </select>
+        <acms-icon name="chevron" [size]="13" [weight]="2.2" class="sel__c" />
+      </label>
+
+      @if (isFiltered()) {
+        <button class="clear" type="button" (click)="clearFilters()">
+          <acms-icon name="refresh" [size]="13" [weight]="2.2" /> Clear
+        </button>
+      }
+
+      <button class="btn btn--primary" type="button" (click)="openCreate()">
+        <acms-icon name="plus" [size]="14" [weight]="2.4" />
+        New account
+      </button>
     </div>
 
     @if (error()) {
       <div class="alert" role="alert">
-        {{ error() }}
+        <acms-icon name="alert" [size]="16" [weight]="2.2" />
+        <span>{{ error() }}</span>
       </div>
     }
 
@@ -97,8 +123,8 @@ import { UserFormModalComponent } from './user-form-modal.component';
             ? 'No accounts match these filters. Clear them to see everyone.'
             : 'No user accounts exist yet. Create the first one above.'" />
       } @else {
-        <div class="table-wrap">
-          <table class="table">
+        <div class="tbl-wrap">
+          <table class="tbl">
             <caption class="sr-only">User accounts, {{ total() }} total</caption>
             <thead>
               <tr>
@@ -110,19 +136,19 @@ import { UserFormModalComponent } from './user-form-modal.component';
             </thead>
             <tbody>
               @for (u of rows(); track u.id) {
-                <tr [class.row--off]="!u.isActive">
+                <tr [class.off]="!u.isActive">
                   <td>
                     <div class="acct">
-                      <span class="avatar" [attr.data-tone]="tone(u.role)">
+                      <span class="av" [attr.data-tone]="tone(u.role)">
                         {{ initials(u.username) }}
                       </span>
-                      <div class="acct__text">
-                        <span class="acct__name">
+                      <span class="acct__t">
+                        <span class="acct__n">
                           {{ u.username }}
                           @if (isMe(u)) { <span class="you">you</span> }
                         </span>
-                        <span class="acct__mail">{{ u.email || 'No email on file' }}</span>
-                      </div>
+                        <span class="acct__m">{{ u.email || 'No email on file' }}</span>
+                      </span>
                     </div>
                   </td>
                   <td><span class="pill" [attr.data-tone]="tone(u.role)">{{ u.role }}</span></td>
@@ -132,15 +158,13 @@ import { UserFormModalComponent } from './user-form-modal.component';
                     </span>
                   </td>
                   <td class="ta-r">
-                    <div class="row-actions">
-                      <button class="row-btn row-btn--ghost" type="button"
+                    <div class="acts">
+                      <button class="rb" type="button"
                               [disabled]="busyId() === u.id"
-                              (click)="openEdit(u)">
-                        Edit
-                      </button>
-                      <button class="row-btn"
-                              [class.row-btn--danger]="u.isActive"
-                              [class.row-btn--ok]="!u.isActive"
+                              (click)="openEdit(u)">Edit</button>
+                      <button class="rb"
+                              [class.rb--danger]="u.isActive"
+                              [class.rb--ok]="!u.isActive"
                               type="button"
                               [disabled]="busyId() === u.id || isMe(u)"
                               [attr.title]="isMe(u) ? 'You cannot deactivate your own account' : null"
@@ -159,12 +183,10 @@ import { UserFormModalComponent } from './user-form-modal.component';
           </table>
         </div>
 
-        <div class="pad-sm">
-          <acms-paginator
-            [page]="page()"
-            [limit]="limit"
-            [total]="total()"
-            (pageChange)="page.set($event)" />
+        <div class="foot">
+          <span class="cnt">{{ rows().length }} of {{ total() }} account{{ total() === 1 ? '' : 's' }}</span>
+          <acms-paginator [page]="page()" [limit]="limit" [total]="total()"
+                          (pageChange)="page.set($event)" />
         </div>
       }
     </acms-glass-card>
@@ -176,198 +198,186 @@ import { UserFormModalComponent } from './user-form-modal.component';
       (closed)="modalOpen.set(false)" />
   `,
   styles: [`
-    .tiles {
-      display: grid; gap: 14px; margin-bottom: 18px;
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-    }
+    :host { display: block; }
 
-    /* --- Tile: same treatment as the dashboard's KpiCardComponent -------
-       Angled 2-stop gradient - deep/legible on the text side, vivid in the
-       decorative corner where only the glow lives. Every stop below is
-       contrast-checked against white text (6.3-7.7:1), not just a bright
-       colour picked by eye. ------------------------------------------------ */
+    /* ---- stat tiles ---- */
+    .tiles {
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: var(--s-4); margin-bottom: var(--s-5);
+    }
     .tile {
       position: relative; overflow: hidden;
-      display: flex; align-items: center; gap: 12px;
-      padding: 18px; border-radius: var(--r-lg, 16px);
+      display: flex; align-items: center; gap: 11px;
+      padding: 14px var(--s-4); border-radius: var(--r-lg);
+      border: 1px solid rgba(255,255,255,.14);
+      box-shadow: var(--sh-card), inset 0 1px 0 rgba(255,255,255,.18);
       color: #fff;
-      box-shadow: 0 10px 28px -8px rgba(20, 20, 50, .35);
-      transition: transform .22s var(--ease-out, ease), box-shadow .22s var(--ease-out, ease);
+      transition: transform var(--t-fast) var(--ease),
+                  box-shadow var(--t-fast) var(--ease);
     }
-    .tile:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 16px 36px -10px rgba(20, 20, 50, .44);
-    }
+    .tile:hover { transform: translateY(-3px); box-shadow: var(--sh-float); }
 
-    .tile[data-tone="violet"] { background: linear-gradient(135deg, #4C3BC4 0%, #6D28D9 55%, #8B5CF6 100%); }
-    .tile[data-tone="cyan"]   { background: linear-gradient(135deg, #155E75 0%, #0E7490 55%, #22D3EE 100%); }
-    .tile[data-tone="rose"]   { background: linear-gradient(135deg, #BE123C 0%, #E11D48 55%, #FB7185 100%); }
-    /* Deliberately desaturated - this tile represents an "off" state, and
-       the colour itself should read as quieter than the other three. */
-    .tile[data-tone="muted"]  { background: linear-gradient(135deg, #334155 0%, #475569 55%, #64748B 100%); }
+    /* Deep, contrast-checked stop where the text sits; vivid stop only in the
+       corner the glow occupies. Same formula as the dashboard KPI cards. */
+    .tile[data-tone='violet'] { background: linear-gradient(115deg, #4C3BC4 0%, #6D5AE8 58%, #8B5CF6 100%); }
+    .tile[data-tone='cyan']   { background: linear-gradient(115deg, #155E75 0%, #0E7490 55%, #22D3EE 100%); }
+    .tile[data-tone='rose']   { background: linear-gradient(115deg, #BE123C 0%, #E11D48 58%, #FB7185 100%); }
+    /* Desaturated on purpose: this tile reports an "off" state and should
+       read quieter than the other three. */
+    .tile[data-tone='muted']  { background: linear-gradient(115deg, #334155 0%, #475569 55%, #64748B 100%); }
 
-    /* Soft corner bloom - the same "something lit is happening here" cue
-       as the dashboard cards, positioned so it never sits under the text. */
     .tile__glow {
-      position: absolute; top: -34%; right: -18%;
+      position: absolute; top: -36%; right: -18%;
       width: 62%; aspect-ratio: 1; border-radius: 50%;
-      background: radial-gradient(circle, rgba(255,255,255,.32) 0%, transparent 70%);
+      background: radial-gradient(circle, rgba(255,255,255,.30) 0%, transparent 70%);
       pointer-events: none;
-      transition: opacity .3s ease, transform .3s ease;
+      transition: transform var(--t-slow) var(--ease);
     }
-    .tile:hover .tile__glow { opacity: .85; transform: scale(1.1); }
+    .tile:hover .tile__glow { transform: scale(1.12); }
 
-    /* Specular sweep - a diagonal band of light crossing the card on hover,
-       identical technique to the glass-card and KPI-card sheen. */
-    .tile__sheen {
-      position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-      background: linear-gradient(105deg,
-        transparent 34%, rgba(255,255,255,.14) 47%,
-        rgba(255,255,255,.05) 55%, transparent 64%);
-      transform: translateX(-125%);
-      transition: transform 700ms cubic-bezier(.16,1,.3,1);
-    }
-    .tile:hover .tile__sheen { transform: translateX(125%); }
-
-    .tile__icon {
-      position: relative; z-index: 1; flex: none;
-      display: grid; place-items: center; width: 40px; height: 40px;
-      border-radius: 12px; color: #fff;
-      background: rgba(255,255,255,.16);
+    .tile__ic {
+      position: relative; z-index: 1; flex-shrink: 0;
+      display: grid; place-items: center; width: 34px; height: 34px;
+      border-radius: 11px; color: #fff;
+      background: rgba(255,255,255,.18);
       border: 1px solid rgba(255,255,255,.22);
-      transition: transform .22s var(--ease-spring, ease);
+      transition: transform var(--t-fast) var(--ease-spring);
     }
-    .tile:hover .tile__icon { transform: scale(1.08) rotate(-3deg); }
+    .tile:hover .tile__ic { transform: scale(1.08) rotate(-4deg); }
 
     .tile__body { position: relative; z-index: 1; display: grid; min-width: 0; }
-    .tile__value {
-      font-family: var(--font-display, inherit);
-      font-size: 1.55rem; font-weight: 700; line-height: 1.1; color: #fff;
+    .tile__v {
+      font-family: var(--font-display); font-size: var(--fs-xl);
+      font-weight: 700; line-height: 1.1; color: #fff;
       font-variant-numeric: tabular-nums;
-      background: linear-gradient(180deg, #fff 0%, rgba(255,255,255,.86) 100%);
-      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+      text-shadow: 0 1px 8px rgba(0,0,0,.2);
     }
-    .tile__label { font-size: .76rem; color: rgba(255,255,255,.86); }
+    .tile__l { font-size: var(--fs-xs); color: rgba(255,255,255,.82); }
 
-    /* --- Controls: two rows, deliberately unequal weight ------------------
-       Row 1 (top) is the primary scan line - search plus the one action that
-       matters most. Row 2 is filters, visually quieter and explicitly
-       labeled per group so "Role" and "Status" never read as one ambiguous
-       cluster of segmented controls. */
-    .controls { margin-bottom: 18px; }
+    /* ---- toolbar ---- */
+    .bar {
+      display: flex; align-items: center; gap: var(--s-2);
+      flex-wrap: wrap; margin-bottom: var(--s-5);
+    }
+    .bar__search { flex: 1 1 240px; min-width: 0; }
 
-    .controls__top {
-      display: flex; gap: 12px; align-items: center;
-      margin-bottom: 12px;
+    .sel { position: relative; display: inline-flex; align-items: center; }
+    .sel select {
+      appearance: none; -webkit-appearance: none;
+      height: 38px; padding: 0 32px 0 13px;
+      border: 1px solid var(--glass-border); border-radius: var(--r-pill);
+      background: var(--hover-wash); color: var(--ink-muted);
+      font-family: var(--font-body); font-size: var(--fs-sm); font-weight: 600;
+      cursor: pointer;
+      transition: all var(--t-fast) var(--ease);
     }
-    .controls__search { flex: 1 1 auto; min-width: 0; }
-    .controls__top > .btn { flex: none; }
+    .sel select:hover { background: var(--hover-wash-2); color: var(--ink); }
+    .sel select:focus-visible {
+      outline: none; border-color: rgba(124,108,240,.55);
+      box-shadow: 0 0 0 3px rgba(124,108,240,.14);
+    }
+    .sel__c { position: absolute; right: 12px; pointer-events: none;
+              color: var(--ink-dim); }
 
-    .controls__filters {
-      display: flex; flex-wrap: wrap; align-items: center; gap: 14px;
-      padding: 10px 14px;
-      border-radius: var(--r-md, 10px);
-      background: color-mix(in srgb, currentColor 4%, transparent);
-      border: 1px solid var(--line, rgba(127,127,127,.14));
+    .clear {
+      display: inline-flex; align-items: center; gap: 5px;
+      height: 38px; padding: 0 13px; border-radius: var(--r-pill);
+      border: 1px solid var(--glass-border); background: transparent;
+      color: var(--ink-muted); font-family: var(--font-body);
+      font-size: var(--fs-sm); font-weight: 600; cursor: pointer;
+      transition: all var(--t-fast) var(--ease);
     }
-    .filter-group { display: flex; align-items: center; gap: 9px; }
-    .filter-group__label {
-      font-size: .72rem; font-weight: 700; text-transform: uppercase;
-      letter-spacing: .06em; opacity: .55; white-space: nowrap;
-    }
-    .filter-divider {
-      width: 1px; align-self: stretch; min-height: 22px;
-      background: var(--line, rgba(127,127,127,.22));
-    }
+    .clear:hover { color: var(--ink); background: var(--hover-wash); }
 
-    .table-wrap { overflow-x: auto; }
+    .alert {
+      display: flex; align-items: center; gap: 9px;
+      margin-bottom: var(--s-4); padding: 11px var(--s-4);
+      border-radius: var(--r-md);
+      background: var(--danger-bg); color: var(--ink-soft);
+      font-size: var(--fs-sm);
+    }
+    .alert acms-icon { color: var(--danger-fg); flex-shrink: 0; }
+
+    /* ---- table ---- */
+    .tbl-wrap { overflow-x: auto; }
     .ta-r { text-align: right; }
-    .row--off { opacity: .62; }
+    .off { opacity: .58; }
 
     .acct { display: flex; align-items: center; gap: 10px; }
-    .avatar {
-      display: grid; place-items: center; width: 34px; height: 34px; flex: none;
-      border-radius: 50%; font-size: .74rem; font-weight: 700; letter-spacing: .02em;
-      background: color-mix(in srgb, var(--tone, #8B5CF6) 20%, transparent);
-      color: var(--tone, #8B5CF6);
+    .av {
+      flex-shrink: 0; display: grid; place-items: center;
+      width: 34px; height: 34px; border-radius: 50%;
+      font-size: var(--fs-xs); font-weight: 700;
+      background: var(--tone-bg); color: var(--tone-fg);
     }
-    .avatar[data-tone="rose"]   { --tone: #E11D48; }
-    .avatar[data-tone="violet"] { --tone: #8B5CF6; }
-    .avatar[data-tone="blue"]   { --tone: #3B82F6; }
-    .avatar[data-tone="cyan"]   { --tone: #0891B2; }
-    .avatar[data-tone="muted"]  { --tone: #64748B; }
+    .av[data-tone='rose']   { --tone-bg: var(--danger-bg);  --tone-fg: var(--danger-fg); }
+    .av[data-tone='violet'] { --tone-bg: var(--violet-bg);  --tone-fg: var(--violet-fg); }
+    .av[data-tone='blue']   { --tone-bg: var(--info-bg);    --tone-fg: var(--info-fg); }
+    .av[data-tone='cyan']   { --tone-bg: var(--teal-bg);    --tone-fg: var(--teal-fg); }
+    .av[data-tone='muted']  { --tone-bg: var(--hover-wash-2); --tone-fg: var(--ink-dim); }
 
-    .acct__text { display: grid; min-width: 0; }
-    .acct__name { font-weight: 600; font-size: .88rem; display: flex; align-items: center; gap: 6px; }
-    .acct__mail {
-      font-size: .76rem; opacity: .7;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
+    .acct__t { display: grid; min-width: 0; }
+    .acct__n { display: flex; align-items: center; gap: 6px;
+               font-size: var(--fs-sm); font-weight: 600; color: var(--ink); }
+    .acct__m { font-size: var(--fs-xs); color: var(--ink-dim);
+               overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .you {
-      font-size: .64rem; font-weight: 600; text-transform: uppercase;
-      letter-spacing: .06em; padding: 1px 6px; border-radius: 999px;
-      background: color-mix(in srgb, currentColor 14%, transparent); opacity: .8;
+      padding: 1px 7px; border-radius: var(--r-pill);
+      background: var(--violet-bg); color: var(--violet-fg);
+      font-size: 10px; font-weight: 700; letter-spacing: .05em;
+      text-transform: uppercase;
     }
 
     .pill {
-      display: inline-block; padding: 3px 10px; border-radius: 999px;
-      font-size: .74rem; font-weight: 600; white-space: nowrap;
-      background: color-mix(in srgb, var(--tone, #64748B) 16%, transparent);
-      color: var(--tone, #64748B);
+      display: inline-block; padding: 3px 11px; border-radius: var(--r-pill);
+      font-size: var(--fs-xs); font-weight: 600; white-space: nowrap;
+      background: var(--tone-bg); color: var(--tone-fg);
     }
-    .pill[data-tone="rose"]   { --tone: #E11D48; }
-    .pill[data-tone="violet"] { --tone: #7C3AED; }
-    .pill[data-tone="blue"]   { --tone: #2563EB; }
-    .pill[data-tone="cyan"]   { --tone: #0E7490; }
-    .pill[data-tone="ok"]     { --tone: #047857; }
-    .pill[data-tone="muted"]  { --tone: #475569; }
+    .pill[data-tone='rose']   { --tone-bg: var(--danger-bg);  --tone-fg: var(--danger-fg); }
+    .pill[data-tone='violet'] { --tone-bg: var(--violet-bg);  --tone-fg: var(--violet-fg); }
+    .pill[data-tone='blue']   { --tone-bg: var(--info-bg);    --tone-fg: var(--info-fg); }
+    .pill[data-tone='cyan']   { --tone-bg: var(--teal-bg);    --tone-fg: var(--teal-fg); }
+    .pill[data-tone='ok']     { --tone-bg: var(--success-bg); --tone-fg: var(--success-fg); }
+    .pill[data-tone='muted']  { --tone-bg: var(--hover-wash-2); --tone-fg: var(--ink-dim); }
 
-    /* --- Row actions: Edit is quiet and routine; Deactivate/Reactivate is
-       outlined in its semantic colour and only goes solid on hover, so the
-       two buttons read as different weights of action, not identical. ----- */
-    .row-actions { display: inline-flex; gap: 8px; justify-content: flex-end; }
+    /* Edit is routine and quiet; the status toggle is outlined in its semantic
+       colour and only fills on hover, so the two never read as equal weight. */
+    .acts { display: inline-flex; gap: 7px; justify-content: flex-end; }
+    .rb {
+      padding: 6px 13px; border-radius: var(--r-pill);
+      border: 1px solid var(--glass-border);
+      background: transparent; color: var(--ink-muted);
+      font-family: var(--font-body); font-size: var(--fs-xs); font-weight: 600;
+      line-height: 1.25; cursor: pointer; white-space: nowrap;
+      transition: all var(--t-fast) var(--ease);
+    }
+    .rb:hover:not(:disabled) { background: var(--hover-wash); color: var(--ink); }
+    .rb:disabled { opacity: .4; cursor: not-allowed; }
+    .rb:focus-visible { outline: 2px solid var(--violet-fg); outline-offset: 1px; }
 
-    .row-btn {
-      padding: 6px 13px; border-radius: 999px;
-      font-size: .78rem; font-weight: 650; line-height: 1.2;
-      cursor: pointer; white-space: nowrap;
-      border: 1px solid transparent;
-      transition: background .15s ease, border-color .15s ease, color .15s ease, opacity .15s ease;
-    }
-    .row-btn:disabled { opacity: .4; cursor: not-allowed; }
+    .rb--danger { color: var(--danger-fg); border-color: var(--danger-bg); }
+    .rb--danger:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger-fg); }
+    .rb--ok { color: var(--success-fg); border-color: var(--success-bg); }
+    .rb--ok:hover:not(:disabled) { background: var(--success-bg); color: var(--success-fg); }
 
-    .row-btn--ghost {
-      background: transparent; color: inherit;
-      border-color: var(--line, rgba(127,127,127,.3));
+    .foot {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: var(--s-4); flex-wrap: wrap; padding: 12px var(--s-5);
+      border-top: 1px solid var(--track);
     }
-    .row-btn--ghost:hover:not(:disabled) {
-      background: color-mix(in srgb, currentColor 8%, transparent);
-    }
+    .cnt { font-size: var(--fs-xs); color: var(--ink-dim); }
 
-    .row-btn--danger {
-      background: transparent; color: #E11D48;
-      border-color: color-mix(in srgb, #E11D48 45%, transparent);
-    }
-    .row-btn--danger:hover:not(:disabled) {
-      background: #E11D48; color: #fff; border-color: #E11D48;
-    }
+    .pad { padding: var(--s-5); display: grid; gap: 10px; }
+    .row-sk { height: 44px; }
 
-    .row-btn--ok {
-      background: transparent; color: #059669;
-      border-color: color-mix(in srgb, #059669 45%, transparent);
-    }
-    .row-btn--ok:hover:not(:disabled) {
-      background: #059669; color: #fff; border-color: #059669;
-    }
-
-    .pad-sm { padding: 12px 16px; }
-
+    @media (max-width: 1100px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
     @media (max-width: 720px) {
-      .controls__top { flex-wrap: wrap; }
-      .controls__top > .btn { flex: 1 1 100%; order: -1; }
-      .controls__search { flex: 1 1 100%; }
-      .controls__filters { flex-direction: column; align-items: flex-start; }
-      .filter-divider { display: none; }
+      .tiles { grid-template-columns: 1fr; }
+      .bar__search { flex: 1 1 100%; }
+      .bar .btn--primary { flex: 1 1 100%; justify-content: center; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .tile, .tile__glow, .tile__ic, .rb, .sel select { transition: none; }
     }
   `],
 })
@@ -393,44 +403,28 @@ export class AdminUsersComponent implements OnDestroy {
   readonly modalOpen = signal(false);
   readonly stats = signal<AdminStats | null>(null);
 
-  readonly roleOptions: SegmentOption[] = [
-    { label: 'All', value: '' },
-    { label: 'Admin', value: 'Admin' },
-    { label: 'Security', value: 'Security' },
-    { label: 'Printer', value: 'Printer' },
-    { label: 'Viewer', value: 'Viewer' },
-  ];
-
-  readonly statusOptions: SegmentOption[] = [
-    { label: 'All', value: '' },
-    { label: 'Active', value: 'active' },
-    { label: 'Deactivated', value: 'inactive' },
-  ];
-
   readonly isFiltered = computed(() =>
     !!this.search().trim() || !!this.roleFilter() || !!this.statusFilter());
 
   readonly tiles = computed(() => {
     const s = this.stats();
-    // `as const` preserves literal string types so they satisfy IconComponent's
-    // strict `name` union. 'userX' isn't a registered icon here - reusing
-    // 'users' for the Deactivated tile until a dedicated icon is confirmed;
-    // the gradient tone still carries the distinction visually.
+    // `as const` keeps the tone and icon strings as literal types so they
+    // satisfy IconComponent's strict `name` union without a cast.
     return [
-      { label: 'Total accounts', value: s?.totalUsers ?? '-',   icon: 'users',     tone: 'violet' },
-      { label: 'Active',         value: s?.activeUsers ?? '-',  icon: 'userCheck', tone: 'cyan' },
-      { label: 'Deactivated',    value: s?.inactiveUsers ?? '-',icon: 'users',     tone: 'muted' },
-      { label: 'Admins',         value: s?.byRole?.['Admin'] ?? '-', icon: 'shield', tone: 'rose' },
-    ] as const;
+      { label: 'Total accounts', value: s?.totalUsers ?? '\u2014',    icon: 'users',     tone: 'violet' },
+      { label: 'Active',         value: s?.activeUsers ?? '\u2014',   icon: 'userCheck', tone: 'cyan' },
+      { label: 'Deactivated',    value: s?.inactiveUsers ?? '\u2014', icon: 'ban',       tone: 'muted' },
+      { label: 'Administrators', value: s?.byRole?.['Admin'] ?? '\u2014', icon: 'shield', tone: 'rose' },
+    ] as { label: string; value: number | string; icon: IconName; tone: string }[];
   });
 
   private debounce?: ReturnType<typeof setTimeout>;
   private lastFilterKey = '';
 
   constructor() {
-    // Single fetch effect. Reading every filter signal here is what subscribes
-    // this effect to them - do not move these reads into the timeout callback,
-    // or the effect stops re-running when filters change.
+    // Single fetch effect. Reading every filter signal HERE is what subscribes
+    // the effect to them — moving these reads inside the timeout callback would
+    // stop the effect re-running when a filter changes.
     effect(() => {
       const q: UserQuery = {
         page: this.page(),
@@ -440,8 +434,8 @@ export class AdminUsersComponent implements OnDestroy {
         status: this.statusFilter() as UserQuery['status'],
       };
 
-      // Any filter change resets to page 1, otherwise you land on an empty
-      // page 3 of a two-page result and think the screen is broken.
+      // Any filter change resets to page 1. Without this you land on an empty
+      // page 3 of a two-page result and conclude the screen is broken.
       const key = `${q.search}|${q.role}|${q.status}`;
       if (key !== this.lastFilterKey) {
         this.lastFilterKey = key;
@@ -457,19 +451,19 @@ export class AdminUsersComponent implements OnDestroy {
 
   ngOnDestroy(): void { clearTimeout(this.debounce); }
 
-  // --- Data -----------------------------------------------------------------
+  /* ---------------------------------------------------------------- data */
 
   private fetch(q: UserQuery): void {
     this.loading.set(true);
     this.error.set(null);
 
     this.admin.getUsersPage(q).subscribe({
-      next: (res) => {
+      next: res => {
         this.rows.set(res.rows);
         this.total.set(res.total);
         this.loading.set(false);
       },
-      error: (e) => {
+      error: e => {
         this.error.set(this.admin.describeError(e));
         this.rows.set([]);
         this.total.set(0);
@@ -480,8 +474,8 @@ export class AdminUsersComponent implements OnDestroy {
 
   private loadStats(): void {
     this.admin.getStats().subscribe({
-      next: (s) => this.stats.set(s),
-      // A failed stats call must not blank the table - the tiles just show "-".
+      next: s => this.stats.set(s),
+      // A failed stats call must not blank the table — the tiles show a dash.
       error: () => this.stats.set(null),
     });
   }
@@ -497,7 +491,17 @@ export class AdminUsersComponent implements OnDestroy {
     this.loadStats();
   }
 
-  // --- Actions --------------------------------------------------------------
+  /* ------------------------------------------------------------- actions */
+
+  protected val(e: Event): string {
+    return (e.target as HTMLSelectElement).value;
+  }
+
+  protected clearFilters(): void {
+    this.search.set('');
+    this.roleFilter.set('');
+    this.statusFilter.set('');
+  }
 
   openCreate(): void {
     this.formModal.prepare(null);
@@ -517,34 +521,33 @@ export class AdminUsersComponent implements OnDestroy {
   async toggleStatus(u: AdminUser): Promise<void> {
     const deactivating = u.isActive;
 
-    const ok = await this.askConfirm(
-      deactivating ? 'Deactivate account' : 'Reactivate account',
-      deactivating
+    const ok = await this.confirm.ask({
+      title: deactivating ? 'Deactivate account' : 'Reactivate account',
+      message: deactivating
         ? `${u.username} will not be able to sign in. Their record and history are kept, and you can reactivate them at any time.`
         : `${u.username} will be able to sign in again with their existing password.`,
-      deactivating ? 'Deactivate' : 'Reactivate',
-    );
+    });
     if (!ok) return;
 
     this.busyId.set(u.id);
     this.admin.setStatus(u.id, !u.isActive).subscribe({
       next: () => {
         this.busyId.set(null);
-        this.notifyOk(deactivating
+        this.toast.success(deactivating
           ? `${u.username} deactivated.`
           : `${u.username} reactivated.`);
         this.refresh();
       },
-      error: (e) => {
+      error: e => {
         this.busyId.set(null);
         // The last-admin and self-deactivation rules come back as 409 with a
-        // real explanation - show it rather than a generic failure.
-        this.notifyErr(this.admin.describeError(e));
+        // real explanation — surface it rather than a generic failure.
+        this.toast.error(this.admin.describeError(e));
       },
     });
   }
 
-  // --- View helpers ---------------------------------------------------------
+  /* -------------------------------------------------------- view helpers */
 
   tone(role: string): string { return ROLE_TONE[role] ?? 'muted'; }
 
@@ -555,21 +558,5 @@ export class AdminUsersComponent implements OnDestroy {
   initials(username: string): string {
     const clean = username.replace(/[^a-zA-Z0-9]/g, '');
     return (clean.slice(0, 2) || '??').toUpperCase();
-  }
-
-  // --- Service adapters -----------------------------------------------------
-  // If ToastService / ConfirmService signatures differ from these, this is the
-  // only place in the file that needs editing.
-
-  private notifyOk(message: string): void { this.toast.success(message); }
-  private notifyErr(message: string): void { this.toast.error(message); }
-
-  private askConfirm(title: string, message: string, confirmText: string): Promise<boolean> {
-    // FIXED: this codebase's ConfirmRequest doesn't have a confirmText field -
-    // only title/message compiled clean. `confirmText` param is kept so
-    // toggleStatus() doesn't need editing; it's just unused here until
-    // ConfirmService's real shape (button label field, if any) is confirmed.
-    void confirmText;
-    return this.confirm.ask({ title, message });
   }
 }

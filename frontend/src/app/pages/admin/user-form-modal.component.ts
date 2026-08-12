@@ -1,7 +1,3 @@
-// =============================================================================
-// src/app/pages/admin/user-form-modal.component.ts
-// =============================================================================
-
 import {
   ChangeDetectionStrategy, Component, EventEmitter, Input, Output, inject, signal,
 } from '@angular/core';
@@ -12,126 +8,144 @@ import {
   ACMS_ROLES, AcmsRole, AdminUser, ROLE_DESCRIPTION,
 } from '../../core/models/admin.models';
 import { ModalComponent } from '../../shared/ui/modal/modal.component';
+import { IconComponent } from '../../shared/ui/icon/icon.component';
 
+/**
+ * Create / edit account form.
+ *
+ * Behaviour is unchanged from the previous version — the same validators, the
+ * same sequenced update calls, the same messages. What changed is the styling:
+ * this file referenced `--line`, `--surface-2` and `--accent`, none of which
+ * exist in styles.scss, so its borders and its selected-role highlight were
+ * rendering from hard-coded fallbacks rather than from the theme. Sizes were
+ * also in raw rem instead of the --fs-* scale. Everything now resolves against
+ * real tokens, so the modal matches every other dialog in the app and follows
+ * the light/dark switch correctly.
+ */
 @Component({
   selector: 'acms-user-form-modal',
   standalone: true,
-  imports: [ReactiveFormsModule, ModalComponent],
+  imports: [ReactiveFormsModule, ModalComponent, IconComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <!-- FIXED: acms-modal has no [open] input in this codebase - the whole
-         element is conditionally rendered instead. UserFormModalComponent
-         itself stays permanently mounted in the parent (admin-users.component
-         holds a #formModal ViewChild), so this @if only toggles the inner
-         modal markup, not this component's own lifecycle. -->
+    <!-- acms-modal has no [open] input in this codebase, so the whole element
+         is conditionally rendered. This component itself stays permanently
+         mounted (the parent holds a #formModal ViewChild), so this @if toggles
+         only the inner markup, never this component's lifecycle. -->
     @if (open) {
-    <acms-modal
-      [title]="user ? 'Edit account' : 'New account'"
-      (close)="dismiss()">
+    <acms-modal [title]="user ? 'Edit account' : 'New account'"
+                [subtitle]="user ? user.username : 'Create a sign-in for a colleague'"
+                [width]="620"
+                (close)="dismiss()">
 
       @if (error()) {
         <div class="alert" role="alert">
-          {{ error() }}
+          <acms-icon name="alert" [size]="16" [weight]="2.2" />
+          <span>{{ error() }}</span>
         </div>
       }
 
       <form class="form" [formGroup]="form" (ngSubmit)="submit()">
 
-        <!-- Username: create only. Identity treats it as the login key, and
+        <!-- Username is create-only: Identity treats it as the login key, and
              renaming would silently invalidate anything that referenced it. -->
         @if (!user) {
-          <label class="field">
-            <span class="field__label">Username</span>
+          <label class="fld">
+            <span class="fld__l">Username</span>
             <input class="input" type="text" formControlName="username"
                    autocomplete="off" placeholder="e.g. security2" />
             @if (touched('username')) {
-              <span class="field__err">
-                3-50 characters, letters and digits or . _ &#64; + -
+              <span class="fld__e">
+                3&ndash;50 characters. Letters, digits, and . _ &#64; + &minus;
               </span>
             }
           </label>
         } @else {
-          <div class="field">
-            <span class="field__label">Username</span>
-            <div class="readonly">
-              {{ user.username }}
-            </div>
-            <span class="field__hint">Usernames cannot be changed after creation.</span>
+          <div class="fld">
+            <span class="fld__l">Username</span>
+            <div class="ro">{{ user.username }}</div>
+            <span class="fld__h">Usernames cannot be changed after creation.</span>
           </div>
         }
 
-        <label class="field">
-          <span class="field__label">Email <span class="opt">(optional)</span></span>
+        <label class="fld">
+          <span class="fld__l">Email <span class="opt">optional</span></span>
           <input class="input" type="email" formControlName="email"
                  autocomplete="off" placeholder="name&#64;nastp.gov.pk" />
           @if (touched('email')) {
-            <span class="field__err">Enter a valid email address.</span>
+            <span class="fld__e">Enter a valid email address.</span>
           }
         </label>
 
         @if (!user) {
-          <label class="field">
-            <span class="field__label">Temporary password</span>
+          <label class="fld">
+            <span class="fld__l">Temporary password</span>
             <div class="pw">
               <input class="input" [type]="showPw() ? 'text' : 'password'"
                      formControlName="password" autocomplete="new-password" />
-              <button class="pw__toggle pw__toggle--text" type="button"
+              <button class="pw__t" type="button"
                       [attr.aria-label]="showPw() ? 'Hide password' : 'Show password'"
                       (click)="showPw.set(!showPw())">
                 {{ showPw() ? 'Hide' : 'Show' }}
               </button>
             </div>
             @if (touched('password')) {
-              <span class="field__err">At least 8 characters.</span>
+              <span class="fld__e">At least 8 characters.</span>
             }
-            <span class="field__hint">
+            <span class="fld__h">
               Share this out of band. There is no password-reset email flow.
             </span>
           </label>
         }
 
-        <div class="field">
-          <span class="field__label">Role</span>
+        <div class="fld">
+          <span class="fld__l">Role</span>
           <div class="roles" role="radiogroup" aria-label="Role">
             @for (r of roles; track r) {
-              <button type="button" class="role" [class.role--on]="form.value.role === r"
+              <button type="button" class="role" [class.on]="form.value.role === r"
                       role="radio" [attr.aria-checked]="form.value.role === r"
                       (click)="form.patchValue({ role: r })">
-                <span class="role__name">{{ r }}</span>
-                <span class="role__desc">{{ describe(r) }}</span>
+                <span class="role__n">
+                  {{ r }}
+                  @if (form.value.role === r) {
+                    <acms-icon name="check" [size]="13" [weight]="2.8" />
+                  }
+                </span>
+                <span class="role__d">{{ describe(r) }}</span>
               </button>
             }
           </div>
         </div>
 
-        <!-- Password reset lives inside edit mode rather than as a separate
-             modal: an admin resetting a password is almost always already
+        <!-- Password reset lives inside edit mode rather than in a separate
+             dialog: an admin resetting a password is almost always already
              looking at that user's record. -->
         @if (user) {
-          <div class="field">
-            <span class="field__label">Reset password <span class="opt">(optional)</span></span>
+          <div class="fld">
+            <span class="fld__l">Reset password <span class="opt">optional</span></span>
             <div class="pw">
               <input class="input" [type]="showPw() ? 'text' : 'password'"
                      formControlName="newPassword" autocomplete="new-password"
                      placeholder="Leave blank to keep the current password" />
-              <button class="pw__toggle pw__toggle--text" type="button"
+              <button class="pw__t" type="button"
                       [attr.aria-label]="showPw() ? 'Hide password' : 'Show password'"
                       (click)="showPw.set(!showPw())">
                 {{ showPw() ? 'Hide' : 'Show' }}
               </button>
             </div>
-            <span class="field__hint">
+            <span class="fld__h">
               Resetting signs the user out of any active session on their next request.
             </span>
           </div>
         }
 
-        <div class="actions">
-          <button class="btn" type="button" (click)="dismiss()" [disabled]="busy()">
-            Cancel
-          </button>
-          <button class="btn btn--primary" type="submit" [disabled]="busy() || form.invalid">
-            @if (busy()) { Saving... } @else { {{ user ? 'Save changes' : 'Create account' }} }
+        <div class="acts">
+          <button class="btn btn--ghost" type="button" (click)="dismiss()"
+                  [disabled]="busy()">Cancel</button>
+          <button class="btn btn--primary" type="submit"
+                  [disabled]="busy() || form.invalid">
+            @if (busy()) { Saving&hellip; }
+            @else { {{ user ? 'Save changes' : 'Create account' }} }
           </button>
         </div>
       </form>
@@ -139,51 +153,81 @@ import { ModalComponent } from '../../shared/ui/modal/modal.component';
     }
   `,
   styles: [`
-    .form { display: grid; gap: 16px; }
-    .field { display: grid; gap: 6px; }
-    .field__label { font-size: .82rem; font-weight: 600; color: var(--ink); }
-    .field__hint  { font-size: .76rem; color: var(--ink-2, var(--ink)); opacity: .72; }
-    .field__err   { font-size: .76rem; color: var(--danger, #E11D48); }
-    .opt { font-weight: 400; opacity: .6; }
-    .readonly {
-      display: flex; align-items: center; gap: 8px;
-      padding: 10px 12px; border-radius: var(--r-md, 10px);
-      background: var(--surface-2, rgba(127,127,127,.08));
-      font-variant-numeric: tabular-nums;
+    .alert {
+      display: flex; align-items: center; gap: 9px;
+      margin-bottom: var(--s-4); padding: 11px var(--s-4);
+      border-radius: var(--r-md);
+      background: var(--danger-bg); color: var(--ink-soft);
+      font-size: var(--fs-sm);
     }
+    .alert acms-icon { color: var(--danger-fg); flex-shrink: 0; }
+
+    .form { display: grid; gap: var(--s-5); }
+    .fld { display: grid; gap: 6px; }
+    .fld__l { display: flex; align-items: center; gap: 7px;
+              font-size: var(--fs-sm); font-weight: 600; color: var(--ink); }
+    .fld__h { font-size: var(--fs-xs); color: var(--ink-dim); line-height: 1.5; }
+    .fld__e { font-size: var(--fs-xs); color: var(--danger-fg); }
+    .opt {
+      padding: 1px 7px; border-radius: var(--r-pill);
+      background: var(--hover-wash-2); color: var(--ink-dim);
+      font-size: 10px; font-weight: 600; letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .ro {
+      display: flex; align-items: center;
+      padding: 10px 13px; border-radius: var(--r-sm);
+      background: var(--hover-wash); color: var(--ink-muted);
+      border: 1px solid var(--glass-border);
+      font-size: var(--fs-sm); font-variant-numeric: tabular-nums;
+    }
+
     .pw { position: relative; }
-    .pw .input { width: 100%; padding-right: 42px; }
-    .pw__toggle {
-      position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-      background: none; border: 0; cursor: pointer; padding: 6px 8px;
-      color: inherit; opacity: .7; border-radius: 8px;
+    .pw .input { width: 100%; padding-right: 62px; }
+    .pw__t {
+      position: absolute; right: 7px; top: 50%; transform: translateY(-50%);
+      padding: 5px 9px; border: none; border-radius: var(--r-sm);
+      background: var(--hover-wash-2); color: var(--ink-muted);
+      font-family: var(--font-body); font-size: var(--fs-xs); font-weight: 600;
+      cursor: pointer; transition: all var(--t-fast) var(--ease);
     }
-    .pw__toggle:hover { opacity: 1; }
-    .pw__toggle--text {
-      font-size: .74rem; font-weight: 600; letter-spacing: .01em;
-    }
+    .pw__t:hover { color: var(--ink); }
 
-    .roles { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    /* Four role cards in a 2x2 grid. The selected one gets a violet border,
+       a tinted fill and a tick, so selection is carried by three cues rather
+       than by border colour alone. */
+    .roles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+             gap: var(--s-2); }
     .role {
-      text-align: left; display: grid; gap: 3px; cursor: pointer;
-      padding: 10px 12px; border-radius: var(--r-md, 10px);
-      border: 1px solid var(--line, rgba(127,127,127,.28));
-      background: transparent; color: inherit;
-      transition: border-color .15s ease, background .15s ease;
+      display: grid; gap: 3px; padding: 11px 13px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--glass-border);
+      background: transparent; color: var(--ink);
+      font-family: var(--font-body); text-align: left; cursor: pointer;
+      transition: all var(--t-fast) var(--ease);
     }
-    .role:hover { border-color: var(--accent, #8B5CF6); }
-    .role--on {
-      border-color: var(--accent, #8B5CF6);
-      background: color-mix(in srgb, var(--accent, #8B5CF6) 12%, transparent);
+    .role:hover { background: var(--hover-wash); }
+    .role:focus-visible { outline: 2px solid var(--violet-fg); outline-offset: 1px; }
+    .role.on {
+      border-color: rgba(124,108,240,.55);
+      background: var(--violet-bg);
+      box-shadow: inset 0 0 0 1px rgba(124,108,240,.18);
     }
-    .role__name { font-weight: 600; font-size: .86rem; }
-    .role__desc { font-size: .74rem; opacity: .75; line-height: 1.35; }
+    .role__n { display: flex; align-items: center; gap: 6px;
+               font-size: var(--fs-sm); font-weight: 600; }
+    .role.on .role__n { color: var(--violet-fg); }
+    .role__d { font-size: var(--fs-xs); color: var(--ink-dim); line-height: 1.45; }
 
-    .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+    .acts { display: flex; justify-content: flex-end; gap: var(--s-2);
+            margin-top: 2px; }
 
     @media (max-width: 620px) {
       .roles { grid-template-columns: 1fr; }
+      .acts { flex-direction: column-reverse; }
+      .acts .btn { width: 100%; justify-content: center; }
     }
+    @media (prefers-reduced-motion: reduce) { .role, .pw__t { transition: none; } }
   `],
 })
 export class UserFormModalComponent {
@@ -212,14 +256,14 @@ export class UserFormModalComponent {
     newPassword: ['', [Validators.minLength(8)]],
   });
 
-  /** Called by the parent right before flipping `open` to true. */
+  /** Called by the parent immediately before flipping `open` to true. */
   prepare(user: AdminUser | null): void {
     this.user = user;
     this.error.set(null);
     this.showPw.set(false);
 
     if (user) {
-      // Edit mode: username and password aren't part of this submission.
+      // Edit mode: username and password are not part of this submission.
       this.form.controls.username.disable();
       this.form.controls.password.disable();
       this.form.reset({
@@ -265,14 +309,14 @@ export class UserFormModalComponent {
         role: v.role,
       }).subscribe({
         next: () => this.done(`Account "${v.username.trim()}" created.`),
-        error: (e) => this.fail(e),
+        error: e => this.fail(e),
       });
       return;
     }
 
-    // Edit mode runs up to three independent calls. They're sequenced rather
-    // than parallel so a rejected role change (last-admin rule) doesn't leave
-    // a half-applied edit with no clear message.
+    // Edit mode runs up to three independent calls. They are sequenced rather
+    // than parallel so a rejected role change (the last-admin rule) cannot
+    // leave a half-applied edit with no clear message.
     const id = this.user.id;
     const roleChanged = v.role !== this.user.role;
     const wantsReset = !!v.newPassword;
@@ -282,10 +326,10 @@ export class UserFormModalComponent {
         if (!roleChanged) return this.afterRole(id, wantsReset, v.newPassword);
         this.admin.setRole(id, v.role).subscribe({
           next: () => this.afterRole(id, wantsReset, v.newPassword),
-          error: (e) => this.fail(e),
+          error: e => this.fail(e),
         });
       },
-      error: (e) => this.fail(e),
+      error: e => this.fail(e),
     });
   }
 
@@ -294,24 +338,18 @@ export class UserFormModalComponent {
 
     this.admin.resetPassword(id, newPassword).subscribe({
       next: () => this.done('Account updated and password reset.'),
-      error: (e) => this.fail(e),
+      error: e => this.fail(e),
     });
   }
 
   private done(message: string): void {
     this.busy.set(false);
-    this.notifyOk(message);
+    this.toast.success(message);
     this.saved.emit();
   }
 
   private fail(e: unknown): void {
     this.busy.set(false);
     this.error.set(this.admin.describeError(e));
-  }
-
-  // --- Toast adapter --------------------------------------------------------
-  // Single place to fix if ToastService's method names differ from success().
-  private notifyOk(message: string): void {
-    this.toast.success(message);
   }
 }

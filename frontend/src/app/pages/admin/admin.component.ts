@@ -1,7 +1,3 @@
-// =============================================================================
-// src/app/pages/admin/admin.component.ts
-// =============================================================================
-
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { PageHeaderComponent } from '../../shared/ui/page-header/page-header.component';
 import { AdminUsersComponent } from './admin-users.component';

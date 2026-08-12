@@ -72,7 +72,14 @@ import { ThemeService } from '../../core/services/theme.service';
     .top {
       display: flex; align-items: center; gap: var(--s-4);
       padding: 11px var(--s-4);
-      position: sticky; top: 18px; z-index: 20;
+      /* z-index is deliberately high and not "just enough to win right now".
+         Topbar and everything that drops down from it (notification panel,
+         user menu) must always sit above page content, full stop - no
+         per-page header, card, or modal-adjacent element should ever need to
+         be compared against this number again. This was the exact bug: a
+         dashboard header briefly had a higher z-index than this, and its
+         page content started out-stacking topbar's own dropdowns. */
+      position: sticky; top: 18px; z-index: 60;
       background: var(--glass);
       backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
       -webkit-backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
@@ -137,17 +144,27 @@ import { ThemeService } from '../../core/services/theme.service';
     .name { font-size: var(--fs-sm); font-weight: 600; line-height: 1.2; }
     .role { font-size: var(--fs-xs); color: var(--ink-dim); }
 
+    /* Liquid-glass treatment matching the notification panel and the export
+       menu: a near-opaque tinted gradient, not real backdrop-filter blur.
+       This element sits inside .top, which already applies its own
+       backdrop-filter - a second one here is a silent no-op, which is
+       exactly what made this menu transparent. Every floating panel in the
+       app now uses this same solid-gradient pattern for that reason. */
     .menu {
       position: absolute; top: calc(100% + 10px); right: 0;
       min-width: 208px; padding: var(--s-2);
       border-radius: var(--r-md);
+      overflow: hidden;
       border: 1px solid var(--glass-border);
-      background: var(--glass-strong);
-      backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
-      -webkit-backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
+      background: linear-gradient(165deg,
+        rgba(30, 41, 82, .97) 0%, rgba(16, 24, 52, .98) 55%, rgba(24, 20, 56, .96) 100%);
       box-shadow: var(--sh-lift), var(--glass-inset);
       animation: riseIn var(--t-base) var(--ease) both;
       z-index: 40;
+    }
+    :host-context([data-theme='light']) .menu {
+      background: linear-gradient(165deg,
+        rgba(255, 255, 255, .96) 0%, rgba(248, 248, 252, .98) 60%, rgba(250, 246, 255, .96) 100%);
     }
     .menu__head {
       display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);

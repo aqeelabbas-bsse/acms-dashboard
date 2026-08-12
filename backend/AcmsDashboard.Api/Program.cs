@@ -130,6 +130,8 @@ builder.Services.AddQuartzHostedService(opt => opt.WaitForJobsToComplete = true)
 // ==================== NL Query Agent: Gemini primary, Ollama silent fallback ====================
 builder.Services.AddSingleton<SqlSafetyValidator>();
 
+builder.Services.AddSingleton<NlProviderHealth>();
+
 builder.Services.AddHttpClient<GeminiClient>(client =>
 {
     client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/");
@@ -139,7 +141,8 @@ builder.Services.AddHttpClient<GeminiClient>(client =>
 builder.Services.AddHttpClient<OllamaClient>(client =>
 {
     client.BaseAddress = new Uri(builder.Configuration["Ollama:BaseUrl"] ?? "http://localhost:11434/");
-    client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue<int?>("Ollama:TimeoutSeconds") ?? 60);
+
+    client.Timeout = TimeSpan.FromSeconds(builder.Configuration.GetValue<int?>("Ollama:TimeoutSeconds") ?? 150);
 });
 
 // Gemini is always tried first; Ollama only runs when Gemini throws
@@ -147,6 +150,7 @@ builder.Services.AddHttpClient<OllamaClient>(client =>
 // caller about which one actually answered.
 builder.Services.AddScoped<INlQueryClient, FailoverNlQueryClient>();
 
+builder.Services.AddHostedService<OllamaWarmupService>();
 builder.Services.AddScoped<AgentService>();
 // ===================================================================================================
 

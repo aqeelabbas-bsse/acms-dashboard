@@ -7,6 +7,7 @@ import { IconComponent } from '../../shared/ui/icon/icon.component';
 import { IconName } from '../../shared/ui/icon/icons';
 import { AuthService } from '../../core/services/auth.service';
 import { ThemeService } from '../../core/services/theme.service';
+import { environment } from '../../../environments/environment';
 
 interface Feature { title: string; icon: IconName; tone: string; }
 
@@ -130,17 +131,18 @@ interface Feature { title: string; icon: IconName; tone: string; }
             </div>
           </div>
 
-          <!-- DEV ONLY - remove this block and demoAccounts before deployment (Phase 16) -->
-          <div class="demo">
-            <div class="demo__lab">Demo accounts &middot; dev only</div>
-            <div class="chips">
-              @for (d of demoAccounts; track d.user) {
-                <button type="button" class="chip" (click)="fill(d.user, d.pass)">
-                  {{ d.role }}
-                </button>
-              }
+          @if (!isProduction) {
+            <div class="demo">
+              <div class="demo__lab">Demo accounts &middot; development build only</div>
+              <div class="chips">
+                @for (d of demoAccounts; track d.user) {
+                  <button type="button" class="chip" (click)="fill(d.user, d.pass)">
+                    {{ d.role }}
+                  </button>
+                }
+              </div>
             </div>
-          </div>
+       }
         </div>
       </main>
     </div>
@@ -365,9 +367,10 @@ export class LoginComponent implements OnInit {
   protected readonly showPw = signal(false);
   protected readonly expiredNotice = signal(false);
 
-  private returnUrl = '/dashboard';
+ private returnUrl = '/dashboard';
 
-  // DEV ONLY - delete this array and the .demo markup before deployment
+  protected readonly isProduction = environment.production;
+
   protected readonly demoAccounts = [
     { role: 'Admin',    user: 'admin',     pass: 'Admin@12345' },
     { role: 'Security', user: 'security1', pass: 'Security@12345' },

@@ -157,12 +157,35 @@ export class AgentService {
     const code = err?.error?.error?.code;
     const msg = err?.error?.error?.message;
 
+    // Two distinct outcomes, and telling them apart matters. The old code
+    // reported every refusal as an attempted database write, which was almost
+    // never true - the usual cause was the model wrapping good SQL in a
+    // sentence. That message sent users hunting for a problem in their
+    // question that wasn't there.
+    if (code === 'QUERY_NOT_UNDERSTOOD' || err?.status === 422) {
+      return {
+        status: 'refused' as const,
+        text: msg
+          ? `${msg} Try asking it a different way, or about one thing at a time.`
+          : "I couldn't turn that into a query I can run. Try asking it a "
+            + 'different way, or about one thing at a time.',
+      };
+    }
     if (code === 'UNSAFE_QUERY') {
       return {
         status: 'refused' as const,
-        text: 'I can only read data, never change it. That question would have '
-            + 'required writing to the database, so I stopped before running it. '
-            + 'Try rephrasing it as a question about what the data shows.',
+        text: msg
+          ? `${msg}`
+          : 'That question would have needed data I am not permitted to read. '
+            + 'I can answer questions about employees, card requests, visitors, '
+            + 'staff RFID cards and visitor passes.',
+      };
+    }
+    if (code === 'AI_UNAVAILABLE' || err?.status === 503) {
+      return {
+        status: 'error' as const,
+        text: msg ?? 'The assistant is unavailable right now. If you are offline, '
+            + 'check that Ollama is running, then try again.',
       };
     }
     if (err?.status === 429 || code === 'RATE_LIMITED') {

@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 
@@ -22,8 +24,12 @@ public class GeminiClient : INlQueryClient
         double temperature = 0,
         CancellationToken ct = default)
     {
-        var apiKey = _config["Gemini:ApiKey"]
-            ?? throw new NlProviderException("Gemini:ApiKey is not configured.");
+        var apiKey = _config["Gemini:ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new NlProviderException(
+                "Gemini:ApiKey is not configured.", null, NlFailureKind.NotConfigured);
+        }
 
         var model = _config["Gemini:Model"] ?? "gemini-2.5-flash";
         var url = $"v1beta/models/{model}:generateContent";
@@ -35,13 +41,17 @@ public class GeminiClient : INlQueryClient
             generationConfig = new
             {
                 temperature,
-                maxOutputTokens = 2048
-            }
+                // Compound UNION-style questions have truncated mid-statement at
+                // lower ceilings, producing invalid SQL rather than a clean
+                // failure. Sized generously for that reason.
+                maxOutputTokens = 2048,
+            },
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
-            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            Content = new StringContent(
+                JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"),
         };
 
         request.Headers.Add("x-goog-api-key", apiKey);
@@ -53,11 +63,26 @@ public class GeminiClient : INlQueryClient
         }
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            throw new NlProviderException("The AI service timed out. Please try again.", ex);
+            throw new NlProviderException(
+                "The AI service timed out.", ex, NlFailureKind.Timeout);
         }
         catch (HttpRequestException ex)
         {
-            throw new NlProviderException("Could not reach the AI service. Check your connection.", ex);
+            // Distinguishing "offline" from "server said no" matters: only the
+            // former should park the provider. A DNS or socket failure arrives
+            // wrapped inside HttpRequestException, so the inner exception is
+            // where the answer actually is.
+            var offline = ex.InnerException is SocketException
+                       || ex.HttpRequestError is HttpRequestError.NameResolutionError
+                                              or HttpRequestError.ConnectionError
+                                              or HttpRequestError.SecureConnectionError;
+
+            throw new NlProviderException(
+                offline
+                    ? "The AI service is unreachable (no network)."
+                    : "Could not reach the AI service.",
+                ex,
+                offline ? NlFailureKind.Unreachable : NlFailureKind.Unknown);
         }
 
         var body = await response.Content.ReadAsStringAsync(ct);
@@ -66,16 +91,22 @@ public class GeminiClient : INlQueryClient
         {
             _logger.LogError("Gemini returned {Status}: {Body}", (int)response.StatusCode, body);
 
-            throw new NlProviderException(response.StatusCode switch
+            var (message, kind) = response.StatusCode switch
             {
-                System.Net.HttpStatusCode.TooManyRequests =>
-                    "The AI service free-tier quota has been reached. Please try again later.",
-                System.Net.HttpStatusCode.BadRequest =>
-                    "The AI service rejected the request (check the model name in configuration).",
-                System.Net.HttpStatusCode.Forbidden or System.Net.HttpStatusCode.Unauthorized =>
-                    "The AI service rejected the API key.",
-                _ => "The AI service returned an error."
-            });
+                HttpStatusCode.TooManyRequests =>
+                    ("The AI service quota has been reached.", NlFailureKind.Quota),
+                HttpStatusCode.BadRequest =>
+                    ("The AI service rejected the request (check the model name in configuration).",
+                     NlFailureKind.BadRequest),
+                HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized =>
+                    ("The AI service rejected the API key.", NlFailureKind.Auth),
+                HttpStatusCode.ServiceUnavailable or HttpStatusCode.GatewayTimeout =>
+                    ("The AI service is temporarily unavailable.", NlFailureKind.Timeout),
+                _ =>
+                    ("The AI service returned an error.", NlFailureKind.Unknown),
+            };
+
+            throw new NlProviderException(message, null, kind);
         }
 
         return ExtractText(body);
@@ -88,7 +119,9 @@ public class GeminiClient : INlQueryClient
         if (!doc.RootElement.TryGetProperty("candidates", out var candidates) ||
             candidates.GetArrayLength() == 0)
         {
-            throw new NlProviderException("The AI service returned no answer (possibly blocked by its safety filters).");
+            throw new NlProviderException(
+                "The AI service returned no answer (possibly blocked by its safety filters).",
+                null, NlFailureKind.EmptyResponse);
         }
 
         var parts = candidates[0].GetProperty("content").GetProperty("parts");
@@ -103,7 +136,10 @@ public class GeminiClient : INlQueryClient
         var result = sb.ToString().Trim();
 
         if (string.IsNullOrEmpty(result))
-            throw new NlProviderException("The AI service returned an empty response.");
+        {
+            throw new NlProviderException(
+                "The AI service returned an empty response.", null, NlFailureKind.EmptyResponse);
+        }
 
         return result;
     }

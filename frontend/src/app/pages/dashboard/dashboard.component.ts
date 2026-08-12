@@ -173,7 +173,7 @@ import { DRILLDOWN_META, DRILL_TILE_KINDS, DrilldownKind } from '../../core/mode
 
     .page { display: flex; align-items: flex-end; justify-content: space-between;
             gap: var(--s-6); flex-wrap: wrap; margin-bottom: var(--s-6);
-            position: relative; z-index: 30; }
+            position: relative; z-index: 5; }
     .title { font-size: var(--fs-2xl); font-weight: 700; margin: 6px 0 4px; }
     .sub { margin: 0; color: var(--ink-muted); }
     .tools { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
