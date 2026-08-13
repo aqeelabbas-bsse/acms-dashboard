@@ -402,11 +402,12 @@ public class AgentService
 
     /// <summary>"AvgProcessingHours" -> "Avg processing hours".</summary>
     private static string Humanise(string column)
-    {
-        var spaced = System.Text.RegularExpressions.Regex.Replace(
-            column, "(?<=[a-z0-9])(?=[A-Z])", " ");
-        return char.ToUpperInvariant(spaced[0]) + spaced[1..].ToLowerInvariant();
-    }
+{
+    if (string.IsNullOrEmpty(column)) return "Result";
+    var spaced = System.Text.RegularExpressions.Regex.Replace(
+        column, "(?<=[a-z0-9])(?=[A-Z])", " ");
+    return char.ToUpperInvariant(spaced[0]) + spaced[1..].ToLowerInvariant();
+}
 
     private static string Truncate(string s, int max) =>
         s.Length <= max ? s : s[..max] + "...";
